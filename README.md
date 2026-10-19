@@ -3,11 +3,25 @@
 A **Freelancer-style space roguelite** with **Diablo-style loot**, built in
 **Godot 4.3+**. (Working title — rename it whenever you like.)
 
-Fly a light fighter through 15 sectors linked by jump gates. Every sector
-holds something: pirate packs, an elite champion, a trade station, or an
-unknown signal. Pirates drop loot. Reach the Warlord's Bastion at the end
-and destroy the dreadnought to win. When you die, you keep **salvage** to
-spend on permanent upgrades and new ships.
+One open-world star system, about 450 km end to end. Sectors (pirate
+packs, elite champions, trade stations, unknown signals) are linked by
+Freelancer-style **trade lanes**: fly through any ring and you're carried
+along at ~2,200 m/s. You can also cruise anywhere yourself at 300 m/s, it
+just takes a while. The further east you go, the tougher it gets. Reach the
+Warlord's Bastion, destroy the dreadnought and fly out through the escape
+gate to win. When you die, you keep **salvage** to spend on permanent
+upgrades and new ships.
+
+**Ambushes and jammers:**
+- Lane trips can be **disrupted** mid-way: you drop out among pirates who
+  bring a jammer, so you can't just cruise away.
+- Some lanes are **jammed** by a guarded pirate jammer. Lane travel stops
+  short of it until you destroy it (jammed lanes show red on the nav map
+  once you've found them).
+- Long cruises through open space attract **interdictors**: pirate ships
+  whose jamming field knocks you out of cruise.
+- Jammers and interdictors show a faint red bubble. Inside it, cruise and
+  lanes are offline.
 
 ## Running
 
@@ -22,12 +36,13 @@ Open the folder in the Godot 4.3+ editor and press **F5**, or run
 | Left mouse | Fire. Guns swivel up to 22° toward the cursor |
 | W / S | Throttle up / down · Backspace: full stop |
 | Shift+W or C | Cruise: charges 5 s, then 300 m/s, guns offline |
+| Fly through a lane ring, or F next to one | Ride the trade lane |
 | Tab | Afterburner (drains power) |
 | A / D · Q / E | Strafe · Roll |
 | R | Cycle target (green diamond = where to aim to hit it) |
 | T | Tractor beam: pull in nearby loot |
-| F | Dock at a station / investigate a signal |
-| I · M · Esc | Cargo & loadout · Sector map · Pause |
+| F | Dock at a station / investigate a signal / enter a lane |
+| I · M · Esc | Cargo & loadout · Nav map (click a sector for a waypoint) · Pause |
 
 ## How it fits together
 
@@ -56,10 +71,10 @@ Leech, Volatile). The **boss** calls in escorts at 66% and 33% hull.
 
 | Folder | What's in it |
 | --- | --- |
-| `scripts/core` | Run state, meta progression, sector map, game world |
+| `scripts/core` | Run state, meta progression, sector map and layout, game world |
 | `scripts/loot` | Item bases, affixes, uniques, generator |
 | `scripts/ship` | Flight model, ship/player/enemy, projectiles, camera |
-| `scripts/world` | Sector builder, gates, stations, loot pods, events, effects |
+| `scripts/world` | Galaxy (lanes, streaming, ambushes, jamming, floating origin), sector contents, stations, loot pods, events, effects |
 | `scripts/ui` | HUD, inventory/shop, map, events, menus |
 
 All models are built from primitive shapes in code, so the project has no
@@ -72,6 +87,13 @@ godot --headless --path . --script res://tests/run_tests.gd
 ```
 
 These cover the loot rules (over 6,000 generated items), rarity rates, flight
-physics, ship stats, map generation, damage, and a scripted playthrough.
+physics, ship stats, map generation, damage, and a scripted playthrough
+(fights, loot, riding a lane end to end, jammed lanes, jammers and
+interdictors, the floating origin, death).
+
+The world keeps the player near (0,0,0) and shifts everything else around
+them ("floating origin"), so positions stay precise across hundreds of
+kilometres. Sectors load within 15 km and unload past 21 km, remembering
+which pirates you've killed.
 `tests/screenshot.gd` renders screenshots when run under a display, for
 example with `xvfb-run`.

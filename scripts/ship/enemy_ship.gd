@@ -31,6 +31,7 @@ var mods: Array = []
 var phase := 0
 var loot_source := LootGenerator.Source.NORMAL
 var credit_value := 10
+var jam_radius := 0.0            # >0: blocks cruise and trade lanes nearby
 
 
 ## Builds a pirate ship's stats for a sector level.
@@ -46,6 +47,12 @@ static func make_stats(level: int, rank_name: String, rng: RandomNumberGenerator
 	s.turn_rate = rng.randf_range(1.3, 1.6)
 	var weapon_count := 1
 	match rank_name:
+		"jammer":
+			s.max_hull *= 3.0
+			s.max_shield *= 2.0
+			s.top_speed = 0.0
+			s.turn_rate = 0.0
+			weapon_count = 0
 		"elite":
 			s.max_hull *= 4.0
 			s.max_shield *= 3.0
@@ -68,7 +75,7 @@ static func make_stats(level: int, rank_name: String, rng: RandomNumberGenerator
 	return s
 
 
-func setup_enemy(lvl: int, rank_name: String, rng_seed: int) -> void:
+func setup_enemy(lvl: int, rank_name: String, rng_seed: int, interdictor: bool = false) -> void:
 	rng.seed = rng_seed
 	level = lvl
 	rank = rank_name
@@ -95,6 +102,14 @@ func setup_enemy(lvl: int, rank_name: String, rng_seed: int) -> void:
 			display_name = "%s%s %s" % [NAME_A[rng.randi_range(0, NAME_A.size() - 1)],
 				NAME_B[rng.randi_range(0, NAME_B.size() - 1)], MODS[mods[0]]["title"]]
 			_apply_mods(s)
+		"jammer":
+			style = "jammer"
+			color = Color(0.35, 0.3, 0.32)
+			size = 14.0
+			loot_source = LootGenerator.Source.CACHE
+			credit_value = 40 + lvl * 4
+			display_name = "Pirate Jammer"
+			jam_radius = 2500.0
 		"boss":
 			style = "boss"
 			color = Color(0.45, 0.2, 0.22)
@@ -107,7 +122,18 @@ func setup_enemy(lvl: int, rank_name: String, rng_seed: int) -> void:
 			display_name = "Warlord Kazrak's Dreadnought"
 		_:
 			credit_value = 10 + lvl * 2
+	if interdictor and rank_name == "normal":
+		display_name = "Pirate Interdictor"
+		jam_radius = 1400.0
+		color = Color(0.5, 0.25, 0.45)
+		credit_value += 20
 	setup_ship(s, style, color, Color(1.0, 0.45, 0.3), size)
+	if jam_radius > 0.0:
+		add_to_group("jammers")
+		# A faint red bubble shows the jamming field.
+		var field := FX.mesh_node(FX.sphere(jam_radius, 32), FX.glow_mat(Color(1.0, 0.1, 0.15), 0.6, 0.035))
+		field.name = "JamField"
+		add_child(field)
 	for i in s.weapons.size():
 		s.weapons[i]["interval"] = float(s.weapons[i]["interval"]) * fire_interval_mult
 
@@ -142,6 +168,11 @@ func _ready() -> void:
 
 
 func think(dt: float) -> void:
+	if rank == "jammer":
+		steer = Vector3.ZERO
+		flight.throttle = 0.0
+		rotate_y(dt * 0.3)
+		return
 	if target == null or not is_instance_valid(target) or not target.alive:
 		target = null
 		var players := get_tree().get_nodes_in_group("player")
@@ -171,6 +202,12 @@ func think(dt: float) -> void:
 				wants_afterburner = false
 	if rank == "boss":
 		_boss_phases()
+
+
+## Floating origin: keep remembered positions in step when the world shifts.
+func shift_origin(offset: Vector3) -> void:
+	home -= offset
+	patrol_point -= offset
 
 
 func _patrol(_dt: float) -> void:
@@ -230,6 +267,7 @@ func take_damage(dmg: Dictionary, attacker: Ship = null) -> float:
 
 
 func _die() -> void:
+	remove_from_group("jammers")
 	if "volatile" in mods and world:
 		for n in get_tree().get_nodes_in_group("ships"):
 			var s := n as Ship

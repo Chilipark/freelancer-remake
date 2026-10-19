@@ -37,6 +37,15 @@ static func build(style: String, color: Color, engine_color: Color = Color(0.4, 
 			root.add_child(FX.mesh_node(FX.cylinder(2.5, 3.5, 6, 12), dark, Vector3(12, 0, 6), Vector3.ONE, Vector3(PI / 2, 0, 0)))
 			hardpoints = [Vector3(-12, 0, -2), Vector3(12, 0, -2), Vector3(0, 3, -16), Vector3(-5, -2.5, -14), Vector3(5, -2.5, -14)]
 			engines = [Vector3(-12, 0, 9.5), Vector3(12, 0, 9.5), Vector3(0, 0, 17.5)]
+		"jammer":
+			var red := FX.glow_mat(Color(1.0, 0.15, 0.2), 5.0)
+			root.add_child(FX.mesh_node(FX.sphere(5.0, 16), red))
+			root.add_child(FX.mesh_node(FX.torus(7.0, 9.0, 24), dark))
+			for axis in [Vector3(1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, 1)]:
+				root.add_child(FX.mesh_node(FX.box(axis * 26.0 + (Vector3.ONE - axis) * 1.6), hull))
+				root.add_child(FX.mesh_node(FX.sphere(1.6, 8), red, axis * 13.5))
+				root.add_child(FX.mesh_node(FX.sphere(1.6, 8), red, -axis * 13.5))
+			engines = []
 		"freighter":
 			root.add_child(FX.mesh_node(FX.box(Vector3(4, 4, 16)), hull))
 			for i in 3:

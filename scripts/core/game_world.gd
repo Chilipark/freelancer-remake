@@ -1,7 +1,7 @@
 class_name GameWorld
 extends Node3D
-## Runs one playthrough: owns the player, camera, current sector, HUD and
-## menus, and handles jumping between sectors, events, death and victory.
+## Runs one playthrough: owns the galaxy, player, camera, HUD and menus, and
+## handles docking, events, death and victory.
 
 signal run_ended
 
@@ -9,12 +9,11 @@ const HULL_STYLES := {"kestrel": "fighter", "warden": "heavy", "marauder": "raid
 
 var player: PlayerShip
 var camera: ChaseCamera
-var sector: Sector
+var galaxy: Galaxy
 var ui_layer: CanvasLayer
 var hud: HUD
 var modal: Control
 var fade: ColorRect
-var jumping := false
 var ended := false
 
 
@@ -25,7 +24,14 @@ func _ready() -> void:
 	var hid: String = Run.hull_def["id"]
 	player.setup_ship(Run.stats, HULL_STYLES.get(hid, "fighter"), Run.hull_def["color"], Color(0.4, 0.75, 1.0), 4.5)
 	player.hull = Run.hull
-	add_child(player)
+
+	galaxy = Galaxy.new()
+	add_child(galaxy)
+	galaxy.build(Run.map, player, int(Run.map.nodes[0]["seed"]))
+	player.world = galaxy
+	galaxy.victory.connect(func(): _end_run(true))
+	galaxy.region_entered.connect(_on_region_entered)
+
 	camera = ChaseCamera.new()
 	camera.target = player
 	add_child(camera)
@@ -37,6 +43,7 @@ func _ready() -> void:
 	hud = HUD.new()
 	hud.player = player
 	hud.camera = camera
+	hud.galaxy = galaxy
 	ui_layer.add_child(hud)
 	fade = ColorRect.new()
 	fade.color = Color(0, 0, 0, 1)
@@ -50,10 +57,11 @@ func _ready() -> void:
 	player.tractor_pressed.connect(_on_tractor)
 	Run.loadout_changed.connect(_on_loadout_changed)
 
-	_enter_sector()
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
 	var tw := create_tween()
 	tw.tween_property(fade, "color:a", 0.0, 0.8)
+	Run.message.emit("Pirates ahead. Steer with the mouse, shoot with left click.", Color(0.7, 0.85, 1))
+	Run.message.emit("Fly through a trade lane ring to travel fast. M opens the nav map.", Color(0.7, 0.85, 1))
 
 
 func _exit_tree() -> void:
@@ -62,53 +70,35 @@ func _exit_tree() -> void:
 	get_tree().paused = false
 
 
-func _enter_sector() -> void:
-	if sector:
-		remove_child(sector)
-		sector.queue_free()
-	sector = Sector.new()
-	add_child(sector)
-	sector.build(Run.current_node(), player)
-	sector.boss_defeated.connect(func(): Run.message.emit("The Warlord is destroyed! Head for the escape gate.", Color(1, 0.85, 0.3)))
-	sector.gate_entered.connect(_on_gate_entered)
-	player.world = sector
-	player.global_transform = Transform3D(Basis.IDENTITY, Sector.ARRIVAL)
-	player.flight.velocity = Vector3(0, 0, -50)
-	player.flight.ang_vel = Vector3.ZERO
-	player.flight.throttle = 0.5
-	player.flight.set_cruise(false)
-	player.target = null
-	camera.snap()
-	hud.sector = sector
-	var node := Run.current_node()
-	Run.message.emit("Entered %s — %s" % [node["name"], RunMap.TYPE_NAMES[node["type"]]], RunMap.TYPE_COLORS[node["type"]])
+func _on_region_entered(id: int) -> void:
+	var node: Dictionary = Run.map.node_at(id)
+	Run.message.emit("Entering %s — %s" % [node["name"], RunMap.TYPE_NAMES[node["type"]]], RunMap.TYPE_COLORS[node["type"]])
 	match String(node["type"]):
-		"start":
-			Run.message.emit("Pirates ahead. Steer with the mouse, shoot with left click.", Color(0.7, 0.85, 1))
-			Run.message.emit("Fly through a jump gate to move on. M shows the map.", Color(0.7, 0.85, 1))
 		"station":
 			Run.message.emit("A trade station. Fly close and press F to dock.", Color(0.5, 1, 0.6))
 		"event":
 			Run.message.emit("Unknown signal detected. Investigate with F.", Color(0.8, 0.6, 1))
 		"boss":
-			Run.message.emit("The Warlord's dreadnought blocks the way out!", Color(1, 0.3, 0.3))
+			Run.message.emit("The Warlord's dreadnought guards the escape gate!", Color(1, 0.3, 0.3))
 
 
 func _process(_dt: float) -> void:
 	if player and player.alive and not get_tree().paused:
 		Run.hull = player.hull
-	if sector:
-		match sector.interaction_available():
+	if galaxy:
+		match galaxy.interaction_available():
 			"station":
-				hud.prompt = "[F] Dock at " + sector.station.station_name
+				hud.prompt = "[F] Dock at " + galaxy.current_region().station.station_name
 			"event":
-				hud.prompt = "[F] Investigate: " + String(sector.event_def["title"])
+				hud.prompt = "[F] Investigate: " + String(galaxy.current_region().state["event"]["title"])
+			"lane":
+				hud.prompt = "[F] Enter trade lane to " + String(galaxy.nearest_ring()["dest"])
 			_:
 				hud.prompt = ""
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if modal or ended or jumping:
+	if modal or ended:
 		return
 	if event.is_action_pressed("inventory"):
 		_open_inventory(null)
@@ -136,13 +126,14 @@ func _close_modal() -> void:
 		modal = null
 	get_tree().paused = false
 	if not ended:
-		player.controls_enabled = true
+		player.controls_enabled = galaxy.trip.is_empty()
 		Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
 		player.hull = Run.hull
 
 
 func _open_map() -> void:
 	var m := MapUI.new()
+	m.galaxy = galaxy
 	m.closed.connect(_close_modal)
 	_open_modal(m)
 
@@ -166,44 +157,47 @@ func _open_pause() -> void:
 	root.process_mode = Node.PROCESS_MODE_ALWAYS
 	var vb: VBoxContainer = m[1]
 	vb.add_child(UITheme.button("Resume", _close_modal))
-	vb.add_child(UITheme.button("Sector Map", _open_map))
+	vb.add_child(UITheme.button("Nav Map", _open_map))
 	vb.add_child(UITheme.button("Abandon Run", func(): _end_run(false)))
 	_open_modal(root)
 
 
 func _on_interact() -> void:
-	if modal or sector == null:
+	if modal or galaxy == null:
 		return
-	match sector.interaction_available():
+	match galaxy.interaction_available():
 		"station":
+			var st := galaxy.current_region().station
 			player.flight.velocity = Vector3.ZERO
 			player.flight.throttle = 0.0
-			Run.message.emit("Docked at " + sector.station.station_name, Color(0.5, 1, 0.6))
-			_open_inventory(sector.station)
+			Run.message.emit("Docked at " + st.station_name, Color(0.5, 1, 0.6))
+			_open_inventory(st)
 		"event":
+			var region := galaxy.current_region()
 			var ev := EventUI.new()
-			ev.event_def = sector.event_def
-			ev.level = sector.level()
-			ev.chosen.connect(func(i): _resolve_event(ev, i))
+			ev.event_def = region.state["event"]
+			ev.level = region.level()
+			ev.chosen.connect(func(i): _resolve_event(ev, region, i))
 			ev.closed.connect(_close_modal)
 			_open_modal(ev)
+		"lane":
+			galaxy.use_nearest_lane()
 
 
-func _resolve_event(ev: EventUI, choice: int) -> void:
-	var text := SectorEvents.resolve(sector.event_def, choice, self)
+func _resolve_event(ev: EventUI, region: Region, choice: int) -> void:
+	var text := SectorEvents.resolve(region.state["event"], choice, self)
 	if not text.begins_with("You can't afford"):
-		sector.event_done = true
+		region.finish_event()
 	ev.show_result(text)
 
 
 func _on_tractor() -> void:
-	var n := sector.tractor_all() if sector else 0
-	if n == 0:
+	if galaxy and galaxy.tractor_all() == 0:
 		Run.message.emit("Nothing in tractor range.", Color(0.6, 0.6, 0.65))
 
 
 func _on_jettison(item: Item) -> void:
-	sector.spawn_item(player.global_position - player.forward() * 40.0, item)
+	galaxy.spawn_item(player.position - player.forward() * 40.0, item)
 
 
 func _on_loadout_changed() -> void:
@@ -212,26 +206,7 @@ func _on_loadout_changed() -> void:
 		player.hull = Run.hull
 
 
-# --- Travel / end of run ---------------------------------------------------
-
-func _on_gate_entered(target_id: int) -> void:
-	if jumping or ended:
-		return
-	if target_id == -2:
-		_end_run(true)
-		return
-	jumping = true
-	Run.hull = player.hull
-	player.controls_enabled = false
-	var tw := create_tween()
-	tw.tween_property(fade, "color:a", 1.0, 0.5)
-	tw.tween_callback(func():
-		Run.travel_to(target_id)
-		_enter_sector()
-		player.controls_enabled = true
-		jumping = false)
-	tw.tween_property(fade, "color:a", 0.0, 0.7)
-
+# --- End of run ---------------------------------------------------------------
 
 func _on_player_died(_s: Ship) -> void:
 	Run.hull = 0.0
@@ -254,19 +229,19 @@ func _end_run(did_win: bool) -> void:
 # --- Event context (used by SectorEvents.resolve) --------------------------
 
 func rng() -> RandomNumberGenerator:
-	return sector.rng
+	return galaxy.rng
 
 
 func level() -> int:
-	return sector.level()
+	return galaxy.level_here()
 
 
 func spawn_pirates(count: int, rank_name: String) -> void:
-	sector.spawn_pirates_near_player(count, rank_name)
+	galaxy.spawn_pirates_near_player(count, rank_name)
 
 
 func drop_loot(source: int, count: int) -> void:
-	sector.drop_loot_near_player(source, count)
+	galaxy.drop_loot_near_player(source, count)
 
 
 func add_credits(amount: int) -> void:

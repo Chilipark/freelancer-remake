@@ -217,6 +217,11 @@ func _test_run_map() -> void:
 		check(depths.size() == RunMap.DEPTH, "all layers present")
 		check(map.nodes[0]["type"] == "start", "starts at departure")
 		check(map.nodes[-1]["type"] == "boss", "ends at the boss")
+		check(map.lanes.size() == map.nodes.reduce(func(acc, n): return acc + n["next"].size(), 0), "a lane for every link")
+		for n in map.nodes:
+			check(n.has("pos"), "sector has a position")
+			for nid in n["next"]:
+				check(n["pos"].distance_to(map.node_at(nid)["pos"]) > 15000.0, "linked sectors are far apart")
 		# Reachability from the start.
 		var seen := {0: true}
 		var queue := [0]
@@ -251,7 +256,8 @@ func _test_damage() -> void:
 	s.free()
 
 
-## Plays through sectors by script: kills pirates, picks up loot, uses a gate.
+## Plays the open world by script: fights, loot, floating origin, lanes,
+## jammers, interdiction, death.
 func _test_playthrough() -> void:
 	var run := root.get_node("Run")
 	run.start("kestrel", 1234)
@@ -260,70 +266,165 @@ func _test_playthrough() -> void:
 	root.add_child(world)
 	for i in 5:
 		await process_frame
-	var sector = world.sector
-	check(sector != null, "sector built")
+	var galaxy = world.galaxy
+	var player = world.player
+	check(galaxy != null, "galaxy built")
+	check(galaxy.lanes.size() == run.map.lanes.size(), "one trade lane per map link")
+	for L in galaxy.lanes:
+		check(int(L["count"]) >= 2 and float(L["length"]) > 10000.0, "lanes are long with several rings")
 	var enemies := get_nodes_in_group("ships").filter(func(n): return n is EnemyShip)
 	check(enemies.size() >= 2, "start sector has pirates")
-	var gates := get_nodes_in_group("gates").filter(func(g): return not g.used)
-	check(gates.size() == run.current_node()["next"].size(), "one gate per exit")
 
-	# Let the AI fly and shoot for a bit.
 	for i in 90:
 		await physics_frame
-	var player = world.player
 	check(player.alive, "player survives the opening seconds")
 
-	# Destroy every pirate and check drops.
+	# Destroy the start pirates, collect drops.
 	var credits_before: int = run.credits
 	for e in enemies:
 		if is_instance_valid(e):
 			e.take_damage({"thermal": 99999.0, "kinetic": 0.0, "emp": 0.0}, player)
 	await process_frame
 	check(run.kills == enemies.size(), "kills counted")
+	check(galaxy.sites[0]["state"]["dead"].size() == enemies.size(), "sector remembers its dead pirates")
 	var loot := get_nodes_in_group("loot")
 	check(loot.size() >= enemies.size(), "pirates drop credits (and maybe items)")
-	# Tractor everything in and fly to it.
 	for l in loot:
-		l.global_position = player.global_position + Vector3(0, 0, -30)
-	sector.tractor_all()
+		l.position = player.position + Vector3(0, 0, -30)
+	galaxy.tractor_all()
 	for i in 30:
 		await process_frame
 	check(run.credits > credits_before, "credits collected")
 
-	# Force a guaranteed item drop and pick it up.
 	var cargo_before: int = run.cargo.size()
-	sector.spawn_item(player.global_position, LootGenerator.generate(5, LootGenerator.Source.BOSS, sector.rng))
+	galaxy.spawn_item(player.position, LootGenerator.generate(5, LootGenerator.Source.BOSS, galaxy.rng))
 	for i in 5:
 		await process_frame
 	check(run.cargo.size() == cargo_before + 1, "item picked up into cargo")
 	var item: Item = run.cargo[-1]
 	run.equip(item)
-	check(not (item in run.cargo), "equipped item left cargo")
-	check(item in run.loadout.values(), "item is in the loadout")
-	check(player.stats == run.stats, "player ship uses the new stats")
+	check(item in run.loadout.values() and player.stats == run.stats, "equipped item applies to the ship")
 
-	# Fly through the first gate.
-	var start_id: int = run.node_id
-	var gate: JumpGate = gates[0]
-	var target_id := gate.target_id
-	var gx := gate.global_transform
-	player.global_position = gx * Vector3(0, 0, 60)
+	# Floating origin keeps the player near (0,0,0) without moving them in the world.
+	var abs_before: Vector3 = galaxy.player_abs()
+	player.position += Vector3(5000, 0, 0)
 	await process_frame
-	player.global_position = gx * Vector3(0, 0, -20)
 	await process_frame
-	for i in 120:
+	check(player.position.length() < 3000.0, "world recentred on the player")
+	check(galaxy.player_abs().distance_to(abs_before + Vector3(5000, 0, 0)) < 50.0, "absolute position preserved across shift")
+
+	# Fly through the second ring of a lane out of the start sector and ride it.
+	var li := -1
+	for i in galaxy.lanes.size():
+		if galaxy.lanes[i]["a"] == 0:
+			li = i
+			break
+	var L: Dictionary = galaxy.lanes[li]
+	var dir: Vector3 = L["dir"]
+	var entry: Vector3 = L["start"] + dir * (float(L["spacing"]) - 80.0)
+	player.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP), galaxy.to_local_pos(entry))
+	player.flight.velocity = dir * 80.0
+	player.flight.throttle = 1.0
+	for i in 200:
 		await process_frame
-	check(run.node_id == target_id and run.node_id != start_id, "jumped through the gate to the next sector")
-	check(world.sector != sector, "a new sector was built")
-	check(run.visited.size() == 2, "visit recorded")
+		if not galaxy.trip.is_empty():
+			break
+	check(not galaxy.trip.is_empty(), "flying through a ring starts lane travel")
+	if not galaxy.trip.is_empty():
+		galaxy.trip["stop_t"] = L["length"]
+		galaxy.trip["reason"] = "arrived"
+		var max_speed := 0.0
+		var t0 := Time.get_ticks_msec()
+		while not galaxy.trip.is_empty() and Time.get_ticks_msec() - t0 < 60000:
+			await process_frame
+			max_speed = maxf(max_speed, player.flight.speed())
+		check(galaxy.trip.is_empty(), "lane trip finishes")
+		check(max_speed > 2000.0, "lanes reach ~2200 m/s (got %d)" % int(max_speed))
+		check(galaxy.player_abs().distance_to(L["end"]) < 100.0, "arrived at the far end of the lane")
+		check(player.controls_enabled and not player.on_rails, "control returned after the lane")
+		await create_timer(0.6).timeout
+		check(run.node_id == int(L["b"]), "entered the sector at the end of the lane")
+
+	# Jammers block cruise; killing them frees it.
+	var jammer = galaxy._spawn_enemy(player.position + Vector3(400, 0, 0), "jammer", 3)
+	await process_frame
+	check(player.is_jammed(), "jammer field detected")
+	player.toggle_cruise()
+	check(not player.flight.cruise_active, "can't cruise while jammed")
+	jammer.take_damage({"thermal": 999999.0, "kinetic": 0.0, "emp": 0.0}, player)
+	await process_frame
+	check(not player.is_jammed(), "jamming ends when the jammer dies")
+	player.toggle_cruise()
+	check(player.flight.cruise_active, "cruise works again")
+	player.flight.set_cruise(false)
+
+	# A jammed lane stops you short of the jammer until it's destroyed.
+	var jl := -1
+	for i in galaxy.lanes.size():
+		if float(galaxy.lanes[i]["jam_t"]) >= 0.0:
+			jl = i
+			break
+	check(jl >= 0, "the map has at least one jammed lane")
+	if jl >= 0:
+		var J: Dictionary = galaxy.lanes[jl]
+		var jdir: Vector3 = J["dir"]
+		player.global_transform = Transform3D(Basis.looking_at(jdir, Vector3.UP), galaxy.to_local_pos(J["start"] + jdir * 10.0))
+		await process_frame
+		galaxy.trip = {}
+		galaxy.start_trip(jl, 0.0, 1)
+		check(not galaxy.trip.is_empty(), "jammed lane can still be entered")
+		check(float(galaxy.trip["stop_t"]) <= float(J["jam_t"]) - galaxy.JAM_STOP_DISTANCE + 1.0, "trip stops before the jammer")
+		galaxy._end_trip("test")
+		var stop_abs: Vector3 = J["start"] + jdir * (float(J["jam_t"]) - galaxy.JAM_STOP_DISTANCE)
+		player.global_transform = Transform3D(Basis.looking_at(jdir, Vector3.UP), galaxy.to_local_pos(stop_abs))
+		await create_timer(0.6).timeout
+		var site_id: int = J["jam_site"]
+		var lane_jammer = null
+		for n in get_nodes_in_group("ships"):
+			if n is EnemyShip and n.get_meta("site", -1) == site_id and n.rank == "jammer":
+				lane_jammer = n
+		check(lane_jammer != null, "lane jammer site streamed in")
+		if lane_jammer:
+			lane_jammer.take_damage({"thermal": 999999.0, "kinetic": 0.0, "emp": 0.0}, player)
+			await process_frame
+			check(0 in galaxy.sites[site_id]["state"]["dead"], "jammer kill remembered")
+			for n in get_nodes_in_group("jammers"):
+				n.take_damage({"thermal": 999999.0, "kinetic": 0.0, "emp": 0.0}, player)
+			await process_frame
+			var here_t: float = (galaxy.player_abs() - J["start"]).dot(jdir)
+			galaxy.start_trip(jl, here_t, 1)
+			check(not galaxy.trip.is_empty() and galaxy.trip["reason"] != "jammed", "lane clear once the jammer is dead")
+			galaxy._end_trip("test")
+
+	# Open-space interdiction while cruising.
+	for n in get_nodes_in_group("ships"):
+		if n is EnemyShip:
+			n.remove_from_group("ships")
+			n.remove_from_group("jammers")
+			n.queue_free()
+	await process_frame
+	var mid: Vector3 = (run.map.node_at(0)["pos"] + run.map.node_at(run.map.node_at(0)["next"][0])["pos"]) * 0.5 + Vector3(0, 4000, 0)
+	player.global_transform = Transform3D(Basis.looking_at(Vector3(1, 0, 0), Vector3.UP), galaxy.to_local_pos(mid))
+	player.flight.set_cruise(true)
+	player.flight.cruise_elapsed = 99.0
+	var got := false
+	for i in 40:
+		galaxy._interdiction(galaxy.INTERDICT_EVERY + 0.1)
+		if get_nodes_in_group("jammers").size() > 0:
+			got = true
+			break
+	check(got, "cruising through open space draws an interdictor")
+	if got:
+		var inter = get_nodes_in_group("jammers")[0]
+		player.position = inter.position + Vector3(0, 0, 300)
+		galaxy._check_jamming()
+		check(not player.flight.cruise_active, "interdictor knocks you out of cruise")
 
 	# Die and finish the run.
 	var salvage_before: int = root.get_node("Meta").salvage
 	player.take_damage({"thermal": 999999.0, "kinetic": 0.0, "emp": 0.0})
 	check(not player.alive, "player can die")
-	for i in 150:
-		await process_frame
-	await create_timer(2.2).timeout
+	await create_timer(2.3).timeout
 	check(world.ended, "run ends after death")
 	check(root.get_node("Meta").salvage > salvage_before, "salvage awarded")
 	world.queue_free()

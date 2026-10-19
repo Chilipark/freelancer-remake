@@ -5,7 +5,7 @@ extends Control
 
 var player: PlayerShip
 var camera: Camera3D
-var sector: Sector
+var galaxy: Galaxy
 var prompt := ""
 var _messages: Array = []   # [text, color, time_left]
 var _font: Font
@@ -46,7 +46,7 @@ func _draw() -> void:
 		_text_centered(prompt, Vector2(vp.x * 0.5, vp.y - 150), 22, Color(0.6, 1.0, 0.7))
 	if not player.mouse_flight:
 		_text_centered("Mouse flight OFF — press Space", Vector2(vp.x * 0.5, vp.y - 120), 16, Color(1, 0.8, 0.4))
-	_text(_font, Vector2(vp.x - 560, 24), "I Cargo · M Map · T Tractor · R Target · C Cruise · Tab Boost · F Dock", 14, Color(0.55, 0.65, 0.75))
+	_text(_font, Vector2(vp.x - 590, 24), "I Cargo · M Nav map · T Tractor · R Target · C Cruise · Tab Boost · F Dock/Lane", 14, Color(0.55, 0.65, 0.75))
 
 
 func _text(font: Font, pos: Vector2, s: String, fsize: int, col: Color) -> void:
@@ -97,19 +97,15 @@ func _draw_markers(_vp: Vector2) -> void:
 		if gate.used:
 			continue
 		var d := ppos.distance_to(gate.global_position)
-		var lbl := gate.label_text.split("\n")[0] + "  %dm" % int(d)
+		var lbl := gate.label_text.split("\n")[0] + "  " + _km(d)
 		var s := _on_screen(gate.global_position)
 		if s[0]:
 			draw_arc(s[1], 10, 0, TAU, 16, gate.color, 2.0)
 			_text(_font, s[1] + Vector2(14, 5), lbl, 13, gate.color)
 		else:
 			_edge_arrow(gate.global_position, gate.color, lbl)
-	# Station / event
-	if sector:
-		if sector.station:
-			_marker(sector.station.global_position, Color(0.5, 1, 0.6), sector.station.station_name)
-		if sector.event_beacon and not sector.event_done:
-			_marker(sector.event_beacon.global_position, Color(0.8, 0.6, 1), String(sector.event_def.get("title", "Signal")))
+	if galaxy:
+		_draw_galaxy_markers()
 	# Enemies
 	for n in get_tree().get_nodes_in_group("ships"):
 		var e := n as Ship
@@ -133,10 +129,67 @@ func _draw_markers(_vp: Vector2) -> void:
 			draw_colored_polygon(PackedVector2Array([s[1] + Vector2(0, -6), s[1] + Vector2(6, 0), s[1] + Vector2(0, 6), s[1] + Vector2(-6, 0)]), col)
 
 
+func _km(d: float) -> String:
+	return "%.1f km" % (d / 1000.0) if d >= 1000.0 else "%dm" % int(d)
+
+
+func _draw_galaxy_markers() -> void:
+	var r := galaxy.current_region()
+	if r:
+		if r.station:
+			_marker(r.station.global_position, Color(0.5, 1, 0.6), r.station.station_name)
+		if r.event_beacon:
+			_marker(r.event_beacon.global_position, Color(0.8, 0.6, 1), String(r.state["event"]["title"]))
+	# Other sectors in scanner range.
+	var pabs := galaxy.player_abs()
+	for n in Run.map.nodes:
+		var d: float = pabs.distance_to(n["pos"])
+		if int(n["id"]) == Run.node_id and d < Galaxy.REGION_RADIUS:
+			continue
+		var is_wp := int(n["id"]) == Run.waypoint
+		if d > 45000.0 and not is_wp:
+			continue
+		var col: Color = RunMap.TYPE_COLORS[n["type"]]
+		var nm: String = n["name"]
+		if n["type"] == "event" and not (int(n["id"]) in Run.visited):
+			nm += " (?)"
+		var local := galaxy.to_local_pos(n["pos"])
+		# Project far points onto a nearby sphere so the camera can place them.
+		var shown := player.position + (local - player.position).normalized() * minf(d, 30000.0)
+		var s := _on_screen(shown)
+		var lbl := ("WAYPOINT  " if is_wp else "") + nm + "  " + _km(d)
+		if s[0]:
+			draw_arc(s[1], 7, 0, TAU, 12, col, 2.0)
+			if is_wp:
+				draw_arc(s[1], 12, 0, TAU, 16, Color.WHITE, 1.5)
+			_text(_font, s[1] + Vector2(12, 5), lbl, 12, col)
+		elif is_wp:
+			_edge_arrow(shown, Color.WHITE, lbl)
+	# Nearby trade lane entrances.
+	if galaxy.trip.is_empty():
+		var shown_lanes := 0
+		for L in galaxy.lanes:
+			var start: Vector3 = L["start"]
+			var end: Vector3 = L["end"]
+			for e in [[start, L["name_b"]], [end, L["name_a"]]]:
+				var d2: float = pabs.distance_to(e[0])
+				if d2 > 9000.0 or shown_lanes >= 5:
+					continue
+				shown_lanes += 1
+				var s2 := _on_screen(galaxy.to_local_pos(e[0]))
+				if s2[0]:
+					var p: Vector2 = s2[1]
+					draw_rect(Rect2(p - Vector2(6, 6), Vector2(12, 12)), Color(0.95, 0.8, 0.4), false, 2.0)
+					_text(_font, p + Vector2(10, 4), "Lane → %s  %s" % [e[1], _km(d2)], 12, Color(0.95, 0.8, 0.4))
+	# Jamming warning.
+	if player.is_jammed():
+		_text_centered("⚠ JAMMED — cruise and trade lanes offline", Vector2(size.x * 0.5, 130), 20, Color(1, 0.3, 0.35))
+
+
 func _marker(pos: Vector3, col: Color, label: String) -> void:
 	var d := player.global_position.distance_to(pos)
 	var s := _on_screen(pos)
-	var lbl := label + "  %dm" % int(d)
+	var lbl := label + "  " + _km(d)
 	if s[0]:
 		draw_rect(Rect2(s[1] - Vector2(8, 8), Vector2(16, 16)), col, false, 2.0)
 		_text(_font, s[1] + Vector2(14, 5), lbl, 13, col)
@@ -216,7 +269,10 @@ func _draw_speed(vp: Vector2) -> void:
 	_bar(Vector2(x + 140, y), 120, 8, absf(f.throttle), Color(0.4, 0.9, 0.6) if f.throttle >= 0 else Color(1, 0.6, 0.3))
 	var state := ""
 	var col := Color(0.6, 0.9, 1.0)
-	if f.is_cruising():
+	if galaxy and not galaxy.trip.is_empty():
+		state = "TRADE LANE"
+		col = Color(0.95, 0.8, 0.4)
+	elif f.is_cruising():
 		state = "CRUISE"
 	elif f.cruise_active:
 		state = "CRUISE CHARGING"
@@ -231,14 +287,20 @@ func _draw_speed(vp: Vector2) -> void:
 func _draw_sector_info() -> void:
 	var node := Run.current_node()
 	var col: Color = RunMap.TYPE_COLORS[node["type"]]
-	_text(_font, Vector2(24, 32), String(node["name"]), 22, Color.WHITE)
-	_text(_font, Vector2(24, 54), "%s · Level %d · Sector %d / %d" % [RunMap.TYPE_NAMES[node["type"]], node["level"], int(node["depth"]) + 1, RunMap.DEPTH], 14, col)
+	var inside := galaxy == null or galaxy.player_abs().distance_to(node["pos"]) < Galaxy.REGION_RADIUS
+	if inside:
+		_text(_font, Vector2(24, 32), String(node["name"]), 22, Color.WHITE)
+		_text(_font, Vector2(24, 54), "%s · Level %d · Depth %d / %d" % [RunMap.TYPE_NAMES[node["type"]], node["level"], int(node["depth"]) + 1, RunMap.DEPTH], 14, col)
+	else:
+		_text(_font, Vector2(24, 32), "Open space", 22, Color.WHITE)
+		_text(_font, Vector2(24, 54), "Threat level %d · Last sector: %s" % [galaxy.level_here(), node["name"]], 14, Color(0.7, 0.75, 0.8))
 	var hostiles := 0
 	for n in get_tree().get_nodes_in_group("ships"):
-		if (n as Ship).faction == "enemy":
+		var sh := n as Ship
+		if sh.faction == "enemy" and sh.position.distance_to(player.position) < 5000.0:
 			hostiles += 1
 	if hostiles > 0:
-		_text(_font, Vector2(24, 74), "%d hostiles in sector" % hostiles, 14, Color(1, 0.5, 0.4))
+		_text(_font, Vector2(24, 74), "%d hostiles nearby" % hostiles, 14, Color(1, 0.5, 0.4))
 
 
 func _draw_messages(vp: Vector2) -> void:

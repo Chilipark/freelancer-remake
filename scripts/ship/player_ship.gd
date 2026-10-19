@@ -46,6 +46,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func toggle_cruise() -> void:
+	if not flight.cruise_active and is_jammed():
+		Run.message.emit("Cruise jammed! Destroy the jammer or get out of its field.", Color(1, 0.3, 0.35))
+		return
 	flight.set_cruise(not flight.cruise_active)
 	if flight.cruise_active:
 		flight.throttle = 1.0
@@ -122,6 +125,10 @@ func compute_lead(t: Ship) -> Vector3:
 	for i in 3:
 		time = (rel_pos + rel_vel * time).length() / speed
 	return t.global_position + rel_vel * time
+
+
+func is_jammed() -> bool:
+	return world != null and world.has_method("is_jammed") and world.is_jammed(global_position)
 
 
 func hostiles() -> Array:

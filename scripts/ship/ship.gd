@@ -32,6 +32,7 @@ var cooldowns: Array = []
 var steer := Vector3.ZERO
 var strafe := Vector2.ZERO
 var wants_afterburner := false
+var on_rails := false            # moved by a trade lane, not by its engine
 var rng := RandomNumberGenerator.new()
 
 
@@ -66,10 +67,12 @@ func apply_stats(ship_stats: ShipStats) -> void:
 func _process(dt: float) -> void:
 	if not alive:
 		return
-	think(dt)
-	var burning := wants_afterburner and power > 5.0 and not flight.cruise_active
-	flight.afterburner = burning
-	global_transform = flight.step(global_transform, dt, steer, strafe)
+	var burning := false
+	if not on_rails:
+		think(dt)
+		burning = wants_afterburner and power > 5.0 and not flight.cruise_active
+		flight.afterburner = burning
+		global_transform = flight.step(global_transform, dt, steer, strafe)
 	_regen(dt, burning)
 	for i in cooldowns.size():
 		cooldowns[i] = maxf(0.0, cooldowns[i] - dt)

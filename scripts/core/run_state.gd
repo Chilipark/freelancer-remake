@@ -17,6 +17,7 @@ var hull := 0.0                  # current hull, carried between sectors
 var map := RunMap.new()
 var node_id := 0
 var visited: Array = []
+var waypoint := -1               # map node the player marked on the nav map
 var kills := 0
 var elites_killed := 0
 var bosses_killed := 0
@@ -51,6 +52,7 @@ func start(hull_id: String, seed_value: int = -1) -> void:
 	map.generate(rng)
 	node_id = map.start_id()
 	visited = [node_id]
+	waypoint = -1
 	kills = 0
 	elites_killed = 0
 	bosses_killed = 0
@@ -65,13 +67,21 @@ func current_node() -> Dictionary:
 	return map.node_at(node_id)
 
 
+## The deepest sector reached this run.
 func depth() -> int:
-	return int(current_node()["depth"])
+	var d := 0
+	for id in visited:
+		d = maxi(d, int(map.node_at(id)["depth"]))
+	return d
 
 
+## Called when the player flies into a sector.
 func travel_to(id: int) -> void:
 	node_id = id
-	visited.append(id)
+	if not (id in visited):
+		visited.append(id)
+	if waypoint == id:
+		waypoint = -1
 
 
 func recompute() -> void:
