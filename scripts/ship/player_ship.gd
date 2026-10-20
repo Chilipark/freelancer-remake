@@ -10,6 +10,7 @@ signal tractor_pressed
 const AIM_ASSIST_DEG := 3.5
 
 var camera: Camera3D
+var autopilot: Autopilot
 var mouse_flight := true
 var controls_enabled := true
 var aim_point := Vector3.ZERO
@@ -30,7 +31,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			toggle_cruise()
 			get_viewport().set_input_as_handled()
 			return
-	if event.is_action_pressed("cruise"):
+	if event.is_action_pressed("autopilot"):
+		if autopilot:
+			if autopilot.active:
+				autopilot.cancel("cancelled")
+			else:
+				autopilot.engage(Run.waypoint)
+	elif event.is_action_pressed("cruise"):
+		if autopilot and autopilot.active:
+			autopilot.cancel("manual control")
 		toggle_cruise()
 	elif event.is_action_pressed("mouse_flight"):
 		mouse_flight = not mouse_flight
@@ -41,8 +50,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("tractor"):
 		tractor_pressed.emit()
 	elif event.is_action_pressed("full_stop"):
+		if autopilot:
+			autopilot.cancel("full stop")
 		flight.throttle = 0.0
 		flight.set_cruise(false)
+
+
+## True if the pilot is touching the flight controls (cancels autopilot).
+func _manual_input() -> bool:
+	for a in ["throttle_up", "throttle_down", "strafe_left", "strafe_right", "roll_left", "roll_right", "afterburner", "fire"]:
+		if Input.is_action_pressed(a):
+			return true
+	return false
+
+
+func take_damage(dmg: Dictionary, attacker: Ship = null) -> float:
+	if autopilot and autopilot.active:
+		autopilot.cancel("under attack!")
+	return super.take_damage(dmg, attacker)
 
 
 func toggle_cruise() -> void:
@@ -61,6 +86,14 @@ func think(dt: float) -> void:
 	if not controls_enabled:
 		steer.z = level_roll()
 		return
+
+	if autopilot and autopilot.active:
+		if _manual_input():
+			autopilot.cancel("manual control")
+		else:
+			autopilot.drive(self, dt)
+			_update_aim()
+			return
 
 	if Input.is_action_pressed("throttle_up") and not Input.is_key_pressed(KEY_SHIFT):
 		flight.throttle = minf(1.0, flight.throttle + dt * 0.9)

@@ -43,6 +43,7 @@ Open the folder in the Godot 4.3+ editor and press **F5**, or run
 | T | Tractor beam: pull in nearby loot |
 | F | Dock at a station / investigate a signal / enter a lane |
 | I · M · Esc | Cargo & loadout · Nav map (click a sector for a waypoint) · Pause |
+| G | Autopilot to the waypoint. Plans the fastest route over trade lanes, cruises to each lane, rides it, and hands back control on arrival. Any flight key, taking fire, getting jammed or a lane ambush cancels it |
 
 ## How it fits together
 

@@ -42,6 +42,7 @@ var lanes: Array = []
 ## Sites: {id, kind: "region"/"jam", pos, level, node, lane, loaded: Node3D, state}
 var sites: Array = []
 var trip: Dictionary = {}           # active lane trip
+var autopilot := Autopilot.new()
 var _prev_lane_t: Dictionary = {}   # lane index -> last along-lane distance near it
 var _stream_timer := 0.0
 var _interdict_timer := 0.0
@@ -73,6 +74,9 @@ func build(run_map: RunMap, p: PlayerShip, seed_value: int) -> void:
 			"level": RunMap.level_at(L["start"] + L["dir"] * L["jam_t"]), "lane": i, "loaded": null, "state": {"dead": []}}
 		L["jam_site"] = site["id"]
 		sites.append(site)
+	autopilot.galaxy = self
+	player.autopilot = autopilot
+	lane_ended.connect(autopilot.on_lane_ended)
 	var start: Dictionary = map.node_at(map.start_id())
 	origin = start["pos"]
 	_build_ring_meshes()

@@ -38,12 +38,24 @@ func _ready() -> void:
 	legend.add_child(UITheme.label("Trade lane  ", 14))
 	legend.add_child(UITheme.label("━", 18, Color(1, 0.25, 0.3)))
 	legend.add_child(UITheme.label("Jammed  ", 14))
+	legend.add_child(UITheme.button("Autopilot to waypoint (G)", _autopilot, 220))
 	legend.add_child(UITheme.button("Close", func(): closed.emit(), 110))
 	vb.add_child(legend)
 	_compute_bounds()
 
 
+func _autopilot() -> void:
+	if galaxy and galaxy.autopilot.engage(Run.waypoint):
+		closed.emit()
+	else:
+		_info.text = "Pick a reachable sector first (click it)." if Run.waypoint < 0 else "Autopilot can't engage right now."
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("autopilot"):
+		get_viewport().set_input_as_handled()
+		_autopilot()
+		return
 	if event.is_action_pressed("map") or event.is_action_pressed("pause"):
 		get_viewport().set_input_as_handled()
 		closed.emit()
@@ -86,6 +98,19 @@ func _draw_map() -> void:
 		for L in galaxy.lanes:
 			var col := Color(1, 0.25, 0.3) if _lane_jammed(L) else Color(0.95, 0.8, 0.4, 0.75)
 			_canvas.draw_line(_to_canvas(L["start"]), _to_canvas(L["end"]), col, 2.5)
+		# Planned / active autopilot route.
+		var legs: Array = galaxy.autopilot.legs if galaxy.autopilot.active else ([] if Run.waypoint < 0 else galaxy.autopilot.plan(Run.waypoint))
+		var from := _to_canvas(galaxy.player_abs())
+		for l in legs:
+			var to := _to_canvas(l["pos"])
+			_canvas.draw_dashed_line(from, to, Color(0.6, 0.9, 1), 2.0, 6.0)
+			if int(l["lane"]) >= 0:
+				var L2: Dictionary = galaxy.lanes[int(l["lane"])]
+				var exit_pos: Vector3 = L2["end"] if int(l["sign"]) > 0 else L2["start"]
+				_canvas.draw_line(_to_canvas(L2["start"]), _to_canvas(L2["end"]), Color(0.6, 0.9, 1), 4.0)
+				from = _to_canvas(exit_pos)
+			else:
+				from = to
 	for n in Run.map.nodes:
 		var p := _to_canvas(n["pos"])
 		var col: Color = RunMap.TYPE_COLORS[n["type"]]

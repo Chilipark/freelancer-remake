@@ -420,6 +420,67 @@ func _test_playthrough() -> void:
 		galaxy._check_jamming()
 		check(not player.flight.cruise_active, "interdictor knocks you out of cruise")
 
+	# Autopilot: plan a multi-lane route and fly the first legs for real.
+	for n in get_nodes_in_group("ships"):
+		if n is EnemyShip:
+			n.remove_from_group("ships")
+			n.remove_from_group("jammers")
+			n.queue_free()
+	await process_frame
+	var ap = galaxy.autopilot
+	player.flight.set_cruise(false)
+	var home: Dictionary = run.map.node_at(0)
+	player.global_transform = Transform3D(Basis.looking_at(Vector3(1, 0, 0), Vector3.UP), galaxy.to_local_pos(home["pos"]))
+	player.flight.velocity = Vector3.ZERO
+	await process_frame
+	# Pick a sector two layers deep.
+	var goal := -1
+	for n in run.map.nodes:
+		if int(n["depth"]) == 2:
+			goal = int(n["id"])
+			break
+	var route: Array = ap.plan(goal)
+	check(route.size() >= 3, "route to depth 2 uses at least two lanes (got %d legs)" % route.size())
+	check(route[-1]["lane"] == -1 and route[-1]["pos"] == run.map.node_at(goal)["pos"], "route ends at the target sector")
+	var prev_node := 0
+	for l in route.slice(0, route.size() - 1):
+		var LL: Dictionary = galaxy.lanes[int(l["lane"])]
+		var from_node: int = LL["a"] if int(l["sign"]) > 0 else LL["b"]
+		check(from_node == prev_node, "each lane starts where the previous one ended")
+		prev_node = LL["b"] if int(l["sign"]) > 0 else LL["a"]
+	check(prev_node == goal, "last lane arrives at the target sector")
+	run.waypoint = goal
+	check(ap.engage(goal), "autopilot engages")
+	check(ap.status_text().begins_with("AUTOPILOT"), "HUD status text")
+	var t1 := Time.get_ticks_msec()
+	while galaxy.trip.is_empty() and ap.active and Time.get_ticks_msec() - t1 < 45000:
+		await process_frame
+	check(not galaxy.trip.is_empty(), "autopilot flies to the lane and enters it")
+	check(ap.active, "autopilot still engaged on the lane")
+	if not galaxy.trip.is_empty():
+		var LL2: Dictionary = galaxy.lanes[int(galaxy.trip["lane"])]
+		galaxy.trip["stop_t"] = LL2["length"] if int(galaxy.trip["sign"]) > 0 else 0.0
+		galaxy.trip["reason"] = "arrived"
+		galaxy.trip["speed"] = 2200.0
+		var t2 := Time.get_ticks_msec()
+		while not galaxy.trip.is_empty() and Time.get_ticks_msec() - t2 < 60000:
+			await process_frame
+		check(ap.active and ap.leg == 1, "after the lane, autopilot moves on to the next leg")
+	# Touching the controls or taking fire hands control back.
+	player.take_damage({"thermal": 1.0, "kinetic": 0.0, "emp": 0.0})
+	check(not ap.active, "taking fire disengages autopilot")
+	check(not ap.engage(-1), "no waypoint, no autopilot")
+	# Final approach: put the ship just outside the target and let it arrive.
+	ap.engage(goal)
+	ap.leg = ap.legs.size() - 1
+	var gpos: Vector3 = run.map.node_at(goal)["pos"]
+	player.global_transform = Transform3D(Basis.looking_at(Vector3(1, 0, 0), Vector3.UP), galaxy.to_local_pos(gpos - Vector3(1600, 0, 0)))
+	player.flight.velocity = Vector3(60, 0, 0)
+	var t3 := Time.get_ticks_msec()
+	while ap.active and Time.get_ticks_msec() - t3 < 30000:
+		await process_frame
+	check(not ap.active and galaxy.player_abs().distance_to(gpos) < 1200.0, "autopilot arrives and hands back control")
+
 	# Die and finish the run.
 	var salvage_before: int = root.get_node("Meta").salvage
 	player.take_damage({"thermal": 999999.0, "kinetic": 0.0, "emp": 0.0})

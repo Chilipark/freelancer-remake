@@ -46,7 +46,7 @@ func _draw() -> void:
 		_text_centered(prompt, Vector2(vp.x * 0.5, vp.y - 150), 22, Color(0.6, 1.0, 0.7))
 	if not player.mouse_flight:
 		_text_centered("Mouse flight OFF — press Space", Vector2(vp.x * 0.5, vp.y - 120), 16, Color(1, 0.8, 0.4))
-	_text(_font, Vector2(vp.x - 590, 24), "I Cargo · M Nav map · T Tractor · R Target · C Cruise · Tab Boost · F Dock/Lane", 14, Color(0.55, 0.65, 0.75))
+	_text(_font, Vector2(vp.x - 680, 24), "I Cargo · M Nav map · G Autopilot · T Tractor · R Target · C Cruise · Tab Boost · F Dock/Lane", 14, Color(0.55, 0.65, 0.75))
 
 
 func _text(font: Font, pos: Vector2, s: String, fsize: int, col: Color) -> void:
@@ -181,6 +181,22 @@ func _draw_galaxy_markers() -> void:
 					var p: Vector2 = s2[1]
 					draw_rect(Rect2(p - Vector2(6, 6), Vector2(12, 12)), Color(0.95, 0.8, 0.4), false, 2.0)
 					_text(_font, p + Vector2(10, 4), "Lane → %s  %s" % [e[1], _km(d2)], 12, Color(0.95, 0.8, 0.4))
+	# Autopilot status and where it's heading.
+	var ap := galaxy.autopilot
+	if ap.active:
+		_text_centered(ap.status_text(), Vector2(size.x * 0.5, 108), 16, Color(0.6, 0.9, 1))
+		var l := ap.current_leg()
+		if not l.is_empty() and galaxy.trip.is_empty():
+			var lp := galaxy.to_local_pos(l["pos"])
+			var shown := player.position + (lp - player.position).normalized() * minf(player.position.distance_to(lp), 30000.0)
+			var s3 := _on_screen(shown)
+			var apc := Color(0.6, 0.9, 1)
+			if s3[0]:
+				var c: Vector2 = s3[1]
+				draw_polyline(PackedVector2Array([c + Vector2(0, -10), c + Vector2(10, 0), c + Vector2(0, 10), c + Vector2(-10, 0), c + Vector2(0, -10)]), apc, 2.0)
+				_text(_font, c + Vector2(14, -8), "AUTOPILOT  " + _km(player.position.distance_to(lp)), 12, apc)
+			else:
+				_edge_arrow(shown, apc, "AUTOPILOT")
 	# Jamming warning.
 	if player.is_jammed():
 		_text_centered("⚠ JAMMED — cruise and trade lanes offline", Vector2(size.x * 0.5, 130), 20, Color(1, 0.3, 0.35))

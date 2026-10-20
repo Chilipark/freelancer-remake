@@ -19,6 +19,7 @@ const KEYS := {
 	"map": [KEY_M],
 	"pause": [KEY_ESCAPE],
 	"full_stop": [KEY_BACKSPACE],
+	"autopilot": [KEY_G],
 }
 
 

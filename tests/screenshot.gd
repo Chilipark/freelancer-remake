@@ -61,7 +61,18 @@ func _run() -> void:
 		world.camera.snap()
 	await _frames(20)
 	await _snap(out + "/ambush.png")
+	for n in get_nodes_in_group("ships"):
+		if n != p:
+			n.remove_from_group("jammers")
+			n.remove_from_group("ships")
+			n.queue_free()
+	p.target = null
+	p.controls_enabled = true
+	p.global_transform = Transform3D(Basis.looking_at(Vector3(0, 0, 1), Vector3.UP), galaxy.to_local_pos(run.map.nodes[0]["pos"]))
 	run.waypoint = run.map.nodes[-1]["id"]
+	galaxy.autopilot.engage(run.waypoint)
+	await _frames(90)
+	await _snap(out + "/autopilot.png")
 	world._open_map()
 	await _snap(out + "/navmap.png")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://shot_meta.cfg"))
