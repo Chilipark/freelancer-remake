@@ -100,33 +100,54 @@ func _build_planet() -> void:
 			pos, Vector3(1, 0.02, 1), Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5))))
 
 
+const ROCK_MODELS := ["meteor-detailed", "rock-largea", "rock-largeb", "meteor", "rock-crystalslargea", "rock"]
+
+
 func _build_asteroids(count: int) -> void:
 	var rock := FX.mat(Color(0.42, 0.38, 0.35), 0.0, 0.1, 0.95)
-	var mesh := FX.sphere(1.0, 7)
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh
-	mm.instance_count = 260
-	for i in mm.instance_count:
-		var p := Vector3(rng.randf_range(-3000, 3000), rng.randf_range(-700, 700), rng.randf_range(-3000, 3000))
-		var sc := rng.randf_range(2.0, 9.0)
-		var b := Basis.from_euler(Vector3(rng.randf() * TAU, rng.randf() * TAU, 0)).scaled(Vector3(sc, sc * rng.randf_range(0.6, 1.0), sc * rng.randf_range(0.7, 1.2)))
-		mm.set_instance_transform(i, Transform3D(b, p))
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.material_override = rock
-	add_child(mmi)
+	# Kenney rock models if present, else faceted spheres. Each entry: [mesh, unit scale, centre].
+	var kinds: Array = []
+	for m in ROCK_MODELS:
+		var u := Assets.unit_mesh(m)
+		if not u.is_empty():
+			kinds.append(u)
+	if kinds.is_empty():
+		kinds.append([FX.sphere(1.0, 7), 1.0, Vector3.ZERO])
+	var use_override := kinds.size() == 1 and kinds[0][0] is SphereMesh
+	# Decorative small rocks, one MultiMesh per rock type.
+	var per_kind := 260 / kinds.size()
+	for k in kinds:
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = k[0]
+		mm.instance_count = per_kind
+		for i in per_kind:
+			var p := Vector3(rng.randf_range(-3000, 3000), rng.randf_range(-700, 700), rng.randf_range(-3000, 3000))
+			var sc := rng.randf_range(2.0, 9.0) * float(k[1])
+			var b := Basis.from_euler(Vector3(rng.randf() * TAU, rng.randf() * TAU, 0)).scaled(Vector3(sc, sc * rng.randf_range(0.6, 1.0), sc * rng.randf_range(0.7, 1.2)))
+			mm.set_instance_transform(i, Transform3D(b, p - b * Vector3(k[2])))
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		if use_override:
+			mmi.material_override = rock
+		add_child(mmi)
+	# Big rocks you can crash into.
 	for i in count:
 		var p := Vector3(rng.randf_range(-2600, 2600), rng.randf_range(-500, 500), rng.randf_range(-2600, 2600))
 		# Keep the middle (station / arena) and the lane approaches clear.
 		if p.length() < 500.0 or absf(p.z) < 250.0 and absf(p.y) < 250.0:
 			continue
 		var r := rng.randf_range(15.0, 60.0)
-		var a := FX.mesh_node(mesh, rock, p, Vector3(r, r * rng.randf_range(0.6, 1.0), r * rng.randf_range(0.7, 1.3)),
-			Vector3(rng.randf() * TAU, rng.randf() * TAU, 0))
-		a.add_to_group("obstacles")
-		a.set_meta("radius", r * 0.85)
-		add_child(a)
+		var k: Array = kinds[rng.randi_range(0, kinds.size() - 1)]
+		var holder := Node3D.new()
+		holder.position = p
+		holder.rotation = Vector3(rng.randf() * TAU, rng.randf() * TAU, 0)
+		var sc := r * float(k[1])
+		var mi := FX.mesh_node(k[0], rock if use_override else null, -Vector3(k[2]) * sc, Vector3(sc, sc * rng.randf_range(0.7, 1.0), sc))
+		holder.add_child(mi)
+		holder.add_to_group("obstacles")
+		holder.set_meta("radius", r * 0.85)
+		add_child(holder)
 
 
 func spawn_escape_gate() -> void:
@@ -148,8 +169,7 @@ func _build_event_beacon() -> void:
 	add_child(event_beacon)
 	match String(ev["model"]):
 		"freighter":
-			var f := ShipMesh.build("freighter", Color(0.5, 0.48, 0.42), Color(0.3, 0.3, 0.3))
-			f.scale = Vector3.ONE * 3.0
+			var f := ShipMesh.build("freighter", Color(0.5, 0.48, 0.42), Color(0.3, 0.3, 0.3), "freighter", 70.0)
 			f.rotation = Vector3(0.3, 0.8, 0.5)
 			event_beacon.add_child(f)
 		"rocks":

@@ -73,6 +73,7 @@ func _process(dt: float) -> void:
 			s.take_damage(damage, shooter if is_instance_valid(shooter) else null)
 			var fx_parent := get_parent()
 			FX.flash(fx_parent, hit_pos, Color(0.4, 0.7, 1.0) if shield_hit else color, 3.0 if crit else 2.0, 0.25)
+			Sfx.play_at(fx_parent, "hit_shield" if shield_hit else "hit_hull", hit_pos, -12.0)
 			queue_free()
 			return
 	for node in get_tree().get_nodes_in_group("obstacles"):

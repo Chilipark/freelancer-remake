@@ -15,6 +15,7 @@ var hud: HUD
 var modal: Control
 var fade: ColorRect
 var ended := false
+var engine_hum: AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -22,7 +23,9 @@ func _ready() -> void:
 	player.name = "Player"
 	player.add_to_group("player")
 	var hid: String = Run.hull_def["id"]
-	player.setup_ship(Run.stats, HULL_STYLES.get(hid, "fighter"), Run.hull_def["color"], Color(0.4, 0.75, 1.0), 4.5)
+	var lengths := {"kestrel": 14.0, "warden": 24.0, "marauder": 15.0}
+	player.setup_ship(Run.stats, HULL_STYLES.get(hid, "fighter"), Run.hull_def["color"], Color(0.4, 0.75, 1.0),
+		6.0 if hid == "warden" else 4.5, "player_" + hid, lengths.get(hid, 14.0))
 	player.hull = Run.hull
 
 	galaxy = Galaxy.new()
@@ -57,6 +60,12 @@ func _ready() -> void:
 	player.tractor_pressed.connect(_on_tractor)
 	Run.loadout_changed.connect(_on_loadout_changed)
 
+	engine_hum = Sfx.make_loop("spaceEngineLow_000", -22.0)
+	if engine_hum:
+		add_child(engine_hum)
+		engine_hum.play()
+	galaxy.lane_started.connect(func(_l): Sfx.play(self, "lane", -6.0))
+
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
 	var tw := create_tween()
 	tw.tween_property(fade, "color:a", 0.0, 0.8)
@@ -85,6 +94,12 @@ func _on_region_entered(id: int) -> void:
 func _process(_dt: float) -> void:
 	if player and player.alive and not get_tree().paused:
 		Run.hull = player.hull
+	if engine_hum:
+		# Engine pitch and volume follow speed; silent when dead.
+		var spd := player.flight.speed() if player.alive else 0.0
+		var k := clampf(spd / 300.0, 0.0, 1.0)
+		engine_hum.pitch_scale = 0.75 + k * 0.7 + (0.3 if not galaxy.trip.is_empty() else 0.0)
+		engine_hum.volume_db = -60.0 if not player.alive else lerpf(-24.0, -12.0, k)
 	if galaxy:
 		match galaxy.interaction_available():
 			"station":
@@ -171,6 +186,7 @@ func _on_interact() -> void:
 			player.flight.velocity = Vector3.ZERO
 			player.flight.throttle = 0.0
 			Run.message.emit("Docked at " + st.station_name, Color(0.5, 1, 0.6))
+			Sfx.play(self, "dock", -4.0)
 			_open_inventory(st)
 		"event":
 			var region := galaxy.current_region()

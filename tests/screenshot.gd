@@ -61,6 +61,48 @@ func _run() -> void:
 		world.camera.snap()
 	await _frames(20)
 	await _snap(out + "/ambush.png")
+	# Line up a few ship types in front of the camera.
+	for n in get_nodes_in_group("ships"):
+		if n != p:
+			n.remove_from_group("jammers")
+			n.remove_from_group("ships")
+			n.queue_free()
+	await _frames(2)
+	p.global_transform = Transform3D(Basis.IDENTITY, Vector3.ZERO)
+	p.flight.velocity = Vector3.ZERO
+	p.flight.throttle = 0.0
+	var lineup := [["normal", Vector3(-28, -4, -70), false], ["elite", Vector3(10, 2, -95), false],
+		["normal", Vector3(40, -8, -75), true], ["boss", Vector3(-60, 30, -330), false]]
+	for e in lineup:
+		var en = galaxy._spawn_enemy(e[1], e[0], 5, e[2])
+		en.set_process(false)
+		en.rotation = Vector3(0, 0.6, 0)
+	world.camera.snap()
+	await _frames(25)
+	await _snap(out + "/ships.png")
+	# Visit a station.
+	for s in galaxy.sites:
+		if s["kind"] == "region" and s["node"]["type"] == "station":
+			galaxy.origin = s["pos"]
+			for c in galaxy.get_children():
+				if c is Node3D and c != p:
+					c.position = (c.position) # untouched; stream will load fresh
+			break
+	for s in galaxy.sites:
+		if s["loaded"] != null:
+			galaxy._unload_site(s)
+	galaxy._stream(true)
+	await _frames(5)
+	var st = galaxy.current_region()
+	if st == null:
+		for s in galaxy.sites:
+			if s["loaded"] is Region and s["loaded"].station:
+				st = s["loaded"]
+	if st and st.station:
+		p.global_transform = Transform3D(Basis.looking_at(st.station.global_position - (st.station.global_position + Vector3(380, 120, 380)), Vector3.UP), st.station.global_position + Vector3(380, 120, 380))
+		world.camera.snap()
+		await _frames(25)
+		await _snap(out + "/station.png")
 	for n in get_nodes_in_group("ships"):
 		if n != p:
 			n.remove_from_group("jammers")

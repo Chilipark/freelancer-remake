@@ -29,6 +29,7 @@ func _run() -> void:
 	_test_ship_stats()
 	_test_run_map()
 	_test_damage()
+	_test_assets()
 	await _test_playthrough()
 	print("TESTS %s (%d checks, %d failures)" % ["PASSED" if failures == 0 else "FAILED", checks, failures])
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://test_meta.cfg"))
@@ -234,6 +235,26 @@ func _test_run_map() -> void:
 		check(seen.size() == map.nodes.size(), "every sector reachable (seed %d)" % seed_value)
 		for d in [6, RunMap.DEPTH - 2]:
 			check(map.nodes.any(func(n): return n["depth"] == d and n["type"] == "station"), "station offered at depth %d" % d)
+
+
+func _test_assets() -> void:
+	for n in ["player_kestrel", "player_warden", "player_marauder", "pirate_fighter", "pirate_fighter2", "pirate_raider",
+			"pirate_elite", "pirate_interdictor", "jammer", "boss_dreadnought", "freighter"]:
+		var m := Assets.ship(n, 20.0, Color.WHITE)
+		check(m != null, "ship model loads: " + n)
+		if m:
+			check(m.get_meta("hardpoints").size() >= 3, "model has hardpoints: " + n)
+			check(not m.get_meta("engines").is_empty(), "model has engines: " + n)
+			m.free()
+	check(Assets.ship("does_not_exist", 10.0, Color.WHITE) == null, "missing model falls back")
+	var fb := ShipMesh.build("fighter", Color.WHITE, Color.WHITE, "does_not_exist", 10.0)
+	check(fb.get_child_count() > 0, "procedural fallback still builds")
+	fb.free()
+	for r in ["meteor-detailed", "rock-largea"]:
+		check(not Assets.unit_mesh(r).is_empty(), "rock mesh loads: " + r)
+	for snd in Sfx.SETS:
+		for f in Sfx.SETS[snd]:
+			check(Assets.sound(f) != null, "sound loads: " + f)
 
 
 func _test_damage() -> void:

@@ -204,7 +204,7 @@ func _build_ring_meshes() -> void:
 	var beams := MultiMeshInstance3D.new()
 	beams.name = "LaneBeams"
 	beams.multimesh = beam_mm
-	beams.material_override = FX.glow_mat(Color(0.95, 0.75, 0.35), 1.5, 0.25)
+	beams.material_override = FX.glow_mat(Color(0.95, 0.75, 0.35), 1.2, 0.1)
 	beams.position = -origin
 	add_child(beams)
 	var lights := MultiMeshInstance3D.new()
@@ -464,6 +464,7 @@ func _update_loot(dt: float) -> void:
 				lp.queue_free()
 			elif lp.item:
 				if Run.add_to_cargo(lp.item):
+					Sfx.play(self, "pickup", -10.0)
 					lp.queue_free()
 				else:
 					lp.tractored = false

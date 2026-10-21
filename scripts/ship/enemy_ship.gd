@@ -122,12 +122,26 @@ func setup_enemy(lvl: int, rank_name: String, rng_seed: int, interdictor: bool =
 			display_name = "Warlord Kazrak's Dreadnought"
 		_:
 			credit_value = 10 + lvl * 2
+	var model_name := "pirate_raider" if style == "raider" else ("pirate_fighter" if rng.randf() < 0.5 else "pirate_fighter2")
+	var model_len := 12.0
+	match rank_name:
+		"elite":
+			model_name = "pirate_elite"
+			model_len = 20.0
+		"boss":
+			model_name = "boss_dreadnought"
+			model_len = 75.0
+		"jammer":
+			model_name = "jammer"
+			model_len = 32.0
 	if interdictor and rank_name == "normal":
 		display_name = "Pirate Interdictor"
 		jam_radius = 1400.0
 		color = Color(0.5, 0.25, 0.45)
 		credit_value += 20
-	setup_ship(s, style, color, Color(1.0, 0.45, 0.3), size)
+		model_name = "pirate_interdictor"
+		model_len = 18.0
+	setup_ship(s, style, color, Color(1.0, 0.45, 0.3), size, model_name, model_len)
 	if jam_radius > 0.0:
 		add_to_group("jammers")
 		# A faint red bubble shows the jamming field.

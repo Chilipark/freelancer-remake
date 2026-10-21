@@ -78,8 +78,9 @@ Leech, Volatile). The **boss** calls in escorts at 66% and 33% hull.
 | `scripts/world` | Galaxy (lanes, streaming, ambushes, jamming, floating origin), sector contents, stations, loot pods, events, effects |
 | `scripts/ui` | HUD, inventory/shop, map, events, menus |
 
-All models are built from primitive shapes in code, so the project has no
-art assets yet.
+Ships, asteroids and sounds come from free CC0 sources (see
+`assets/CREDITS.md`). Every asset is optional: swap a file for another with
+the same name, or delete it and the game falls back to built-in shapes.
 
 ## Tests
 

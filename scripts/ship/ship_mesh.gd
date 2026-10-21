@@ -3,7 +3,14 @@ extends RefCounted
 ## Builds ship models out of primitive shapes. The ship faces -Z.
 
 ## Returns a Node3D model and stores hardpoint/engine positions in its meta.
-static func build(style: String, color: Color, engine_color: Color = Color(0.4, 0.7, 1.0)) -> Node3D:
+## If `model_name` names a ship in res://assets/ships, that model is used
+## (scaled to `length` metres) instead of the built-in shapes.
+static func build(style: String, color: Color, engine_color: Color = Color(0.4, 0.7, 1.0),
+		model_name: String = "", length: float = 0.0) -> Node3D:
+	if model_name != "" and length > 0.0:
+		var m := Assets.ship(model_name, length, engine_color)
+		if m:
+			return m
 	var root := Node3D.new()
 	var hull := FX.mat(color, 0.0, 0.6, 0.45)
 	var dark := FX.mat(color.darkened(0.55), 0.0, 0.5, 0.6)

@@ -36,7 +36,8 @@ var on_rails := false            # moved by a trade lane, not by its engine
 var rng := RandomNumberGenerator.new()
 
 
-func setup_ship(ship_stats: ShipStats, style: String, color: Color, engine_color: Color, ship_radius: float) -> void:
+func setup_ship(ship_stats: ShipStats, style: String, color: Color, engine_color: Color, ship_radius: float,
+		model_name: String = "", model_length: float = 0.0) -> void:
 	stats = ship_stats
 	flight.configure(stats)
 	hull = stats.max_hull
@@ -45,7 +46,7 @@ func setup_ship(ship_stats: ShipStats, style: String, color: Color, engine_color
 	radius = ship_radius
 	if model:
 		model.queue_free()
-	model = ShipMesh.build(style, color, engine_color)
+	model = ShipMesh.build(style, color, engine_color, model_name, model_length)
 	add_child(model)
 	hardpoints = model.get_meta("hardpoints")
 	cooldowns.clear()
@@ -130,6 +131,14 @@ func fire(aim_point: Vector3) -> bool:
 			dir = forward()
 		cooldowns[i] = float(w["interval"])
 		power -= float(w["energy"])
+		var snd := "laser"
+		if float(w["homing"]) > 0.0:
+			snd = "missile"
+		elif w["type"] == "emp":
+			snd = "pulse"
+		elif w["type"] == "kinetic":
+			snd = "mass"
+		Sfx.play_at(world, snd, origin, -9.0 if faction == "player" else -13.0)
 		for p in int(w["pellets"]):
 			var d := dir
 			if float(w["spread"]) > 0.0:
@@ -200,6 +209,7 @@ func _die() -> void:
 	hull = 0.0
 	if world:
 		FX.explosion(world, global_position, radius)
+		Sfx.play_at(world, "big_explosion" if radius > 12.0 else "explosion", global_position, 0.0 if radius > 12.0 else -4.0)
 	died.emit(self)
 	remove_from_group("ships")
 	if faction == "player":

@@ -25,6 +25,21 @@ func _ready() -> void:
 	for i in 12:
 		var a := i * TAU / 12.0
 		add_child(FX.mesh_node(FX.sphere(2.2, 8), lights, Vector3(cos(a) * 104, 0, sin(a) * 104)))
+	# Kenney satellite dishes and turrets, if the models are present.
+	for i in 2:
+		var dish := Assets.model("satellitedish-large")
+		if dish:
+			dish.scale = Vector3.ONE * 22.0
+			dish.position = Vector3(0, 95, 0) if i == 0 else Vector3(0, -62, 0)
+			dish.rotation = Vector3(0 if i == 0 else PI, 0, 0)
+			add_child(dish)
+	for i in 4:
+		var turret := Assets.model("turret-double")
+		if turret:
+			var a := i * PI / 2.0 + PI / 4.0
+			turret.scale = Vector3.ONE * 10.0
+			turret.position = Vector3(cos(a) * 97.0, 6.0, sin(a) * 97.0)
+			add_child(turret)
 	var label := Label3D.new()
 	label.text = station_name + "\n[F] Dock"
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
