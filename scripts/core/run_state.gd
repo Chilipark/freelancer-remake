@@ -25,6 +25,7 @@ var won := false
 var stats: ShipStats
 ## Run-long bonuses from events: stat -> value.
 var buffs: Dictionary = {}
+var missions := Missions.new()
 
 
 func start(hull_id: String, seed_value: int = -1) -> void:
@@ -53,6 +54,8 @@ func start(hull_id: String, seed_value: int = -1) -> void:
 	node_id = map.start_id()
 	visited = [node_id]
 	waypoint = -1
+	missions = Missions.new()
+	missions.setup(map, rng.randi())
 	kills = 0
 	elites_killed = 0
 	bosses_killed = 0

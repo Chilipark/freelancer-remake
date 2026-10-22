@@ -284,6 +284,7 @@ func _test_playthrough() -> void:
 	run.start("kestrel", 1234)
 	check(run.stats.weapons.size() == 2, "run starts with two guns")
 	var world = load("res://scripts/core/game_world.gd").new()
+	world.show_briefing = false
 	root.add_child(world)
 	for i in 5:
 		await process_frame
@@ -326,6 +327,7 @@ func _test_playthrough() -> void:
 	await process_frame
 	check(run.kills == enemies.size(), "kills counted")
 	check(galaxy.sites[0]["state"]["dead"].size() == enemies.size(), "sector remembers its dead pirates")
+	check(run.missions.main_step == 1, "killing the raiders completes the first objective")
 	var loot := get_nodes_in_group("loot")
 	check(loot.size() >= enemies.size(), "pirates drop credits (and maybe items)")
 	for l in loot:
@@ -369,6 +371,8 @@ func _test_playthrough() -> void:
 		if not galaxy.trip.is_empty():
 			break
 	check(not galaxy.trip.is_empty(), "flying through a ring starts lane travel")
+	check(run.missions.main_step == 2, "taking a lane completes the second objective")
+	check(run.waypoint == run.missions.contact_node, "next objective becomes the waypoint")
 	if not galaxy.trip.is_empty():
 		galaxy.trip["stop_t"] = L["length"]
 		galaxy.trip["reason"] = "arrived"
@@ -519,6 +523,99 @@ func _test_playthrough() -> void:
 	while ap.active and Time.get_ticks_msec() - t3 < 30000:
 		await process_frame
 	check(not ap.active and galaxy.player_abs().distance_to(gpos) < 1200.0, "autopilot arrives and hands back control")
+
+	# Missions: contact, contracts.
+	var ms = run.missions
+	var contact: int = ms.contact_node
+	check(run.map.node_at(contact)["type"] == "station", "the Navy contact is at a station")
+	var cargo_n: int = run.cargo.size()
+	var credits0: int = run.credits
+	ms.on_event("dock", {"node": contact})
+	check(ms.main_step == 3, "docking at the contact completes that objective")
+	check(run.cargo.size() == cargo_n + 1 and run.credits > credits0, "contact pays out credits and gear")
+	check(ms.main_target() == ms.boss_node, "next objective points at the Bastion")
+	var offers: Array = ms.board(contact)
+	check(offers.size() >= 2, "station mission board has offers (%d)" % offers.size())
+	for c in offers:
+		check(c.has("title") and c.has("credits") and int(c["target"]) >= 0, "contract is well formed")
+	var bounty: Dictionary = {}
+	var other: Dictionary = {}
+	for c in offers.duplicate():
+		if c["type"] == "bounty" and bounty.is_empty():
+			bounty = c
+		elif other.is_empty() and c["type"] in ["delivery", "signal"]:
+			other = c
+	if not other.is_empty():
+		check(ms.accept(other), "accept a contract")
+		var cr: int = run.credits
+		ms.on_event("dock" if other["type"] == "delivery" else "signal", {"node": int(other["target"])})
+		check(not (other in ms.contracts) and run.credits > cr, "contract completes and pays (%s)" % other["type"])
+	if not bounty.is_empty():
+		ms.accept(bounty)
+		var tnode: Dictionary = run.map.node_at(int(bounty["target"]))
+		player.global_transform = Transform3D(Basis.IDENTITY, galaxy.to_local_pos(tnode["pos"]) + Vector3(0, 3000, 0))
+		await create_timer(0.6).timeout
+		var ace = null
+		for n in get_nodes_in_group("ships"):
+			if n is EnemyShip and n.has_meta("contract"):
+				ace = n
+		check(ace != null, "bounty ace spawns in the target sector")
+		if ace:
+			var cr2: int = run.credits
+			ace.take_damage({"thermal": 999999.0, "kinetic": 0.0, "emp": 0.0}, player)
+			await process_frame
+			check(not (bounty in ms.contracts) and run.credits > cr2, "killing the ace completes the bounty")
+	ms.on_event("enter", {"node": ms.boss_node})
+	check(ms.main_step == 4, "reaching the Bastion advances the story")
+
+	# Collisions hurt, scaled by speed.
+	for n in get_nodes_in_group("ships"):
+		if n is EnemyShip:
+			n.remove_from_group("ships")
+			n.remove_from_group("jammers")
+			n.queue_free()
+	await process_frame
+	player.hull = player.stats.max_hull
+	player.shield = 0.0
+	player.stats.max_shield = 0.0
+	var rock := Node3D.new()
+	galaxy.add_child(rock)
+	rock.position = player.position + player.forward() * 30.0
+	rock.add_to_group("obstacles")
+	rock.set_meta("radius", 30.0)
+	player.flight.velocity = player.forward() * 120.0
+	player.set_meta("last_crash", -100000)
+	galaxy._collide(player)
+	var crash_loss: float = player.stats.max_hull - player.hull
+	check(crash_loss > 50.0, "ramming a rock at 120 m/s hurts (lost %d)" % int(crash_loss))
+	check(player.flight.velocity.dot(player.forward()) < 0.0, "you bounce off the rock")
+	rock.remove_from_group("obstacles")
+	rock.queue_free()
+	player.hull = player.stats.max_hull
+	player.set_meta("last_crash", -100000)
+	player.flight.velocity = player.forward() * 10.0
+	var slow_rock := Node3D.new()
+	galaxy.add_child(slow_rock)
+	slow_rock.position = player.position + player.forward() * 30.0
+	slow_rock.add_to_group("obstacles")
+	slow_rock.set_meta("radius", 30.0)
+	galaxy._collide(player)
+	check(is_equal_approx(player.hull, player.stats.max_hull), "gentle bumps don't hurt")
+	slow_rock.remove_from_group("obstacles")
+	slow_rock.queue_free()
+	var rammer = galaxy._spawn_enemy(player.position + player.forward() * 6.0, "normal", 1)
+	rammer.stats.max_shield = 0.0
+	rammer.shield = 0.0
+	var rhull: float = rammer.hull
+	rammer.flight.velocity = -player.forward() * 90.0
+	player.flight.velocity = player.forward() * 60.0
+	player.set_meta("last_crash", -100000)
+	galaxy._collide_ships()
+	check(player.hull < player.stats.max_hull and rammer.hull < rhull, "head-on ram damages both ships")
+	rammer.remove_from_group("ships")
+	rammer.queue_free()
+	player.hull = player.stats.max_hull
+	await process_frame
 
 	# Die and finish the run.
 	var salvage_before: int = root.get_node("Meta").salvage

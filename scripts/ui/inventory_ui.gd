@@ -5,6 +5,7 @@ extends Control
 
 signal closed
 signal jettison(item: Item)
+signal board_requested
 
 var station: Station
 var tooltip: ItemTooltip
@@ -30,6 +31,8 @@ func _ready() -> void:
 	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
 	vb.add_child(bottom)
 	bottom.add_child(UITheme.label("Left-click: equip / unequip / buy    Right-click: %s" % ("sell" if station else "jettison"), 14, Color(0.6, 0.65, 0.7)))
+	if station:
+		bottom.add_child(UITheme.button("Mission Board", func(): board_requested.emit(), 160))
 	bottom.add_child(UITheme.button("Close", func(): closed.emit(), 140))
 	tooltip = ItemTooltip.new()
 	add_child(tooltip)

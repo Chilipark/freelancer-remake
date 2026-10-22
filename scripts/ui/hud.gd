@@ -41,12 +41,13 @@ func _draw() -> void:
 	_draw_status(vp)
 	_draw_speed(vp)
 	_draw_sector_info()
+	_draw_objectives(vp)
 	_draw_messages(vp)
 	if prompt != "":
 		_text_centered(prompt, Vector2(vp.x * 0.5, vp.y - 150), 22, Color(0.6, 1.0, 0.7))
 	if not player.mouse_flight:
 		_text_centered("Mouse flight OFF — press Space", Vector2(vp.x * 0.5, vp.y - 120), 16, Color(1, 0.8, 0.4))
-	_text(_font, Vector2(vp.x - 680, 24), "I Cargo · M Nav map · G Autopilot · T Tractor · R Target · C Cruise · Tab Boost · F Dock/Lane", 14, Color(0.55, 0.65, 0.75))
+	_text(_font, Vector2(vp.x - 680, 24), "I Cargo · J Journal · M Map · G Autopilot · T Tractor · R Target · C Cruise · Tab Boost · F Dock/Lane", 14, Color(0.55, 0.65, 0.75))
 
 
 func _text(font: Font, pos: Vector2, s: String, fsize: int, col: Color) -> void:
@@ -317,6 +318,30 @@ func _draw_sector_info() -> void:
 			hostiles += 1
 	if hostiles > 0:
 		_text(_font, Vector2(24, 74), "%d hostiles nearby" % hostiles, 14, Color(1, 0.5, 0.4))
+
+
+## Objective tracker (top right): main story step plus active contracts.
+func _draw_objectives(vp: Vector2) -> void:
+	var m := Run.missions
+	if m == null:
+		return
+	var x := vp.x - 430.0
+	var y := 56.0
+	var lines: Array = []   # [text, colour]
+	var main := "▶ " + m.main_text()
+	var t := m.main_target()
+	if t >= 0 and galaxy:
+		main += "  (%s)" % _km(galaxy.player_abs().distance_to(Run.map.node_at(t)["pos"]))
+	lines.append([main, Color(1, 0.85, 0.3)])
+	for c in m.contracts:
+		var s := "• " + String(c["title"])
+		if galaxy:
+			s += "  (%s)" % _km(galaxy.player_abs().distance_to(Run.map.node_at(int(c["target"]))["pos"]))
+		lines.append([s, Color(0.6, 0.9, 1)])
+	draw_rect(Rect2(Vector2(x - 10, y - 18), Vector2(420, 10 + lines.size() * 20)), Color(0, 0.03, 0.06, 0.5))
+	for l in lines:
+		_text(_font, Vector2(x, y), l[0], 14, l[1])
+		y += 20
 
 
 func _draw_messages(vp: Vector2) -> void:

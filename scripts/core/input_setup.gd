@@ -20,6 +20,7 @@ const KEYS := {
 	"pause": [KEY_ESCAPE],
 	"full_stop": [KEY_BACKSPACE],
 	"autopilot": [KEY_G],
+	"journal": [KEY_J],
 }
 
 

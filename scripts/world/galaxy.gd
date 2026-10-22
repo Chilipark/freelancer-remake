@@ -74,6 +74,7 @@ func build(run_map: RunMap, p: PlayerShip, seed_value: int) -> void:
 			"level": RunMap.level_at(L["start"] + L["dir"] * L["jam_t"]), "lane": i, "loaded": null, "state": {"dead": []}}
 		L["jam_site"] = site["id"]
 		sites.append(site)
+	Run.missions.jam_cleared = lane_jam_cleared
 	autopilot.galaxy = self
 	player.autopilot = autopilot
 	lane_ended.connect(autopilot.on_lane_ended)
@@ -243,6 +244,7 @@ func _process(dt: float) -> void:
 	for s in get_tree().get_nodes_in_group("ships"):
 		if s != player:
 			_collide(s as Ship)
+	_collide_ships()
 
 
 func _shift_origin() -> void:
@@ -280,6 +282,7 @@ func _stream(force: bool) -> void:
 	if pabs.distance_to(near["pos"]) < REGION_RADIUS and Run.node_id != int(near["id"]):
 		Run.travel_to(int(near["id"]))
 		region_entered.emit(int(near["id"]))
+		Run.missions.on_event("enter", {"node": int(near["id"])})
 	var cols := _region_colors(near)
 	_sky_target_a = cols[0]
 	_sky_target_b = cols[1]
@@ -287,6 +290,10 @@ func _stream(force: bool) -> void:
 	for n in get_tree().get_nodes_in_group("ships"):
 		var e := n as EnemyShip
 		if e and not e.has_meta("site") and e.position.length() > CLEANUP_RANGE:
+			if e.has_meta("contract"):
+				for c in Run.missions.contracts:
+					if int(c["id"]) == int(e.get_meta("contract")):
+						c["spawned"] = false
 			e.remove_from_group("ships")
 			e.remove_from_group("jammers")
 			e.queue_free()
@@ -316,6 +323,7 @@ func _load_site(s: Dictionary) -> void:
 		spawns = [{"pos": Vector3.ZERO, "rank": "jammer"}]
 		for i in 3:
 			spawns.append({"pos": Vector3(rng.randf_range(-150, 150), rng.randf_range(-40, 40), rng.randf_range(-150, 150)), "rank": "normal"})
+	s["spawn_count"] = spawns.size()
 	var dead: Array = s["state"]["dead"]
 	for i in spawns.size():
 		if i in dead:
@@ -324,6 +332,36 @@ func _load_site(s: Dictionary) -> void:
 		var e := _spawn_enemy(local + sp["pos"], sp["rank"], int(s["level"]))
 		e.set_meta("site", s["id"])
 		e.set_meta("index", i)
+	if s["kind"] == "region":
+		spawn_bounties(s)
+
+
+## Spawns pirate aces for accepted bounty contracts in a loaded sector.
+func spawn_bounties(s: Dictionary) -> void:
+	if s["loaded"] == null or s["kind"] != "region":
+		return
+	for c in Run.missions.bounties_at(int(s["node"]["id"])):
+		var local := to_local_pos(s["pos"]) + Vector3(rng.randf_range(-900, 900), rng.randf_range(-150, 150), rng.randf_range(-900, 900))
+		var ace := _spawn_enemy(local, "elite", int(c["level"]))
+		ace.display_name = "%s (bounty)" % c["ace"]
+		ace.set_meta("contract", int(c["id"]))
+		c["spawned"] = true
+		for i in 2:
+			_spawn_enemy(local + Vector3(rng.randf_range(-80, 80), 0, rng.randf_range(-80, 80)), "normal", int(c["level"]))
+
+
+## Call after accepting a contract so a bounty in a nearby sector appears.
+func refresh_bounties() -> void:
+	for s in sites:
+		if s["loaded"] != null:
+			spawn_bounties(s)
+
+
+func lane_jam_cleared(lane_index: int) -> bool:
+	var L: Dictionary = lanes[lane_index]
+	if float(L["jam_t"]) < 0.0:
+		return true
+	return 0 in sites[int(L["jam_site"])]["state"]["dead"]
 
 
 func _unload_site(s: Dictionary) -> void:
@@ -390,6 +428,11 @@ func _on_enemy_died(ship: Ship) -> void:
 		s["state"]["dead"].append(int(e.get_meta("index")))
 		if s["kind"] == "jam" and e.rank == "jammer":
 			Run.message.emit("Jammer destroyed! The trade lane is clear.", Color(0.5, 1, 0.6))
+			Run.missions.on_event("jammer", {"lane": int(s["lane"])})
+		if int(s["id"]) == 0 and s["state"]["dead"].size() >= int(s.get("spawn_count", 0)):
+			Run.missions.on_event("raiders_cleared")
+	if e.has_meta("contract"):
+		Run.missions.on_event("kill", {"contract": int(e.get_meta("contract"))})
 	var pos := e.position
 	var credits := int(e.credit_value * rng.randf_range(0.7, 1.3) * (1.0 + Run.stats.credit_find / 100.0))
 	spawn_credits(pos, credits)
@@ -415,6 +458,7 @@ func _on_enemy_died(ship: Ship) -> void:
 				(r as Region).spawn_escape_gate()
 				(r as Region).escape_gate.entered.connect(func(_g): victory.emit())
 		Run.message.emit("The Warlord is destroyed! Fly through the escape gate.", Color(1, 0.85, 0.3))
+		Run.missions.on_event("boss")
 
 
 func drop_loot_near_player(source: int, count: int) -> void:
@@ -470,6 +514,12 @@ func _update_loot(dt: float) -> void:
 					lp.tractored = false
 
 
+const CRASH_SAFE_SPEED := 15.0     # m/s of closing speed before it hurts
+const CRASH_DAMAGE := 1.1          # damage per m/s above that
+
+
+## Pushes a ship out of rocks and stations. Hitting them hurts, more so the
+## faster you were going (a cruise-speed crash can wreck a light fighter).
 func _collide(s: Ship) -> void:
 	if s == null or not s.alive:
 		return
@@ -483,9 +533,58 @@ func _collide(s: Ship) -> void:
 			var vn := s.flight.velocity.dot(n)
 			if vn < 0.0:
 				s.flight.velocity -= n * vn * 1.4
-				if -vn > 35.0 and s.faction == "player":
-					s.take_damage({"kinetic": -vn * 0.25, "thermal": 0.0, "emp": 0.0})
-					s.flight.set_cruise(false)
+				_crash(s, -vn, on.global_position + n * float(on.get_meta("radius", 10.0)))
+
+
+## Ships bumping into each other. Momentum is shared by size (a fighter
+## bounces off the dreadnought), and both take damage from the impact.
+func _collide_ships() -> void:
+	var ships := get_tree().get_nodes_in_group("ships")
+	for i in ships.size():
+		var a := ships[i] as Ship
+		if a == null or not a.alive or a.on_rails:
+			continue
+		for j in range(i + 1, ships.size()):
+			var b := ships[j] as Ship
+			if b == null or not b.alive or b.on_rails:
+				continue
+			var r := a.radius + b.radius
+			var d := a.global_position - b.global_position
+			if d.length_squared() >= r * r or d.length_squared() < 0.0001:
+				continue
+			var n := d.normalized()
+			var ma := pow(a.radius, 3.0) * (50.0 if a.stats.top_speed <= 0.0 else 1.0)
+			var mb := pow(b.radius, 3.0) * (50.0 if b.stats.top_speed <= 0.0 else 1.0)
+			var overlap := r - d.length()
+			a.global_position += n * overlap * mb / (ma + mb)
+			b.global_position -= n * overlap * ma / (ma + mb)
+			var closing := (a.flight.velocity - b.flight.velocity).dot(n)
+			if closing >= 0.0:
+				continue
+			a.flight.velocity -= n * closing * 1.5 * mb / (ma + mb)
+			b.flight.velocity += n * closing * 1.5 * ma / (ma + mb)
+			var contact := b.global_position + n * b.radius
+			_crash(a, -closing * 2.0 * mb / (ma + mb), contact)
+			_crash(b, -closing * 2.0 * ma / (ma + mb), contact)
+
+
+func _crash(s: Ship, impact_speed: float, at: Vector3) -> void:
+	if impact_speed <= CRASH_SAFE_SPEED or not s.alive:
+		return
+	# Don't hit the same ship again for a moment (it may still be touching).
+	var now := Time.get_ticks_msec()
+	if now - int(s.get_meta("last_crash", -10000)) < 400:
+		return
+	s.set_meta("last_crash", now)
+	var dmg := (impact_speed - CRASH_SAFE_SPEED) * CRASH_DAMAGE
+	if s.faction == "player":
+		dmg = minf(dmg, s.stats.max_hull * 0.6)   # a bad crash hurts, but one alone won't kill you
+	s.take_damage({"kinetic": dmg, "thermal": 0.0, "emp": 0.0})
+	s.flight.set_cruise(false)
+	FX.flash(self, at, Color(1.0, 0.8, 0.5), clampf(dmg * 0.05, 2.0, 12.0), 0.3)
+	Sfx.play_at(self, "hit_hull", at, -4.0)
+	if s.faction == "player" and dmg > 8.0:
+		Run.message.emit("Collision! -%d" % int(dmg), Color(1, 0.5, 0.3))
 
 
 # --- Interaction ---------------------------------------------------------------
@@ -598,6 +697,7 @@ func start_trip(lane_index: int, t: float, sgn: int) -> void:
 	player.controls_enabled = false
 	player.flight.set_cruise(false)
 	Run.message.emit("Trade lane to %s" % dest["name"], Color(0.95, 0.8, 0.4))
+	Run.missions.on_event("lane")
 	lane_started.emit(L)
 
 

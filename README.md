@@ -12,6 +12,18 @@ Warlord's Bastion, destroy the dreadnought and fly out through the escape
 gate to win. When you die, you keep **salvage** to spend on permanent
 upgrades and new ships.
 
+**Story and missions:** you're carrying the "Gatebreaker" core, which holds
+the codes for Warlord Kazrak's plan to collapse the system's only jump gate.
+Get it to the Navy beyond that gate at the far east edge. Objectives:
+shake off the raiders, take a lane east, meet the Navy contact mid-way,
+reach the Bastion, kill Kazrak, escape. Stations have Mission Boards with
+contracts (bounties on pirate aces, clearing jammed lanes, deliveries,
+investigating signals). J opens the journal; the current objective becomes
+your waypoint.
+
+**Collisions** with rocks, stations and ships do damage based on impact
+speed; ramming hurts both ships, and bigger ships win.
+
 **Ambushes and jammers:**
 - Lane trips can be **disrupted** mid-way: you drop out among pirates who
   bring a jammer, so you can't just cruise away.
@@ -53,6 +65,7 @@ or run `godot --path .`.
 | T | Tractor beam: pull in nearby loot |
 | F | Dock at a station / investigate a signal / enter a lane |
 | I · M · Esc | Cargo & loadout · Nav map (click a sector for a waypoint) · Pause |
+| J | Journal: objectives and contracts |
 | G | Autopilot to the waypoint. Plans the fastest route over trade lanes, cruises to each lane, rides it, and hands back control on arrival. Any flight key, taking fire, getting jammed or a lane ambush cancels it |
 
 ## How it fits together

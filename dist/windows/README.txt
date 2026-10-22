@@ -20,7 +20,12 @@ CONTROLS
   F ................ dock / investigate / enter a trade lane
   M ................ nav map (click a sector to set a waypoint)
   G ................ autopilot to the waypoint
+  J ................ journal (objectives and contracts)
   I ................ cargo & loadout      Esc: pause
+
+Your mission: carry the Gatebreaker core to the jump gate at the far east
+edge of the system. Stations have Mission Boards with paid contracts.
+Watch your speed near rocks and other ships: collisions hurt.
 
 Fly through trade lane rings to travel fast. Jammers (red bubbles)
 block cruise and lanes until you destroy them. Reach the Warlord's

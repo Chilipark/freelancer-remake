@@ -101,6 +101,8 @@ func show_controls() -> void:
 		"F — dock at a station / investigate a signal",
 		"I — cargo & loadout        M — nav map (click a sector for a waypoint)        Esc — pause",
 		"G — autopilot to the waypoint, using trade lanes (any flight key takes back control)",
+		"J — journal: story objective and station contracts (dock, then Mission Board)",
+		"Collisions hurt: the faster you hit a rock or ship, the more damage you take.",
 		"",
 		"Fly through a jump gate to move on. Each gate shows where it leads.",
 		"Loot follows Diablo rules: white, blue (magic), yellow (rare), gold (unique).",

@@ -29,7 +29,10 @@ func _run() -> void:
 	await _frames(10)
 	main.start_run("kestrel")
 	var world = main._screen
-	await _frames(30)
+	await _frames(10)
+	await _snap(out + "/briefing.png")
+	world._close_modal()
+	await _frames(20)
 	var galaxy = world.galaxy
 	var p = world.player
 	p.controls_enabled = false
@@ -111,6 +114,19 @@ func _run() -> void:
 	p.target = null
 	p.controls_enabled = true
 	p.global_transform = Transform3D(Basis.looking_at(Vector3(0, 0, 1), Vector3.UP), galaxy.to_local_pos(run.map.nodes[0]["pos"]))
+	# Mission board at the contact station.
+	run.missions.main_step = 2
+	var st_node: int = run.missions.contact_node
+	var mb = load("res://scripts/ui/mission_ui.gd").new()
+	mb.mode = 2
+	mb.station_node = st_node
+	mb.galaxy = galaxy
+	world._open_modal(mb)
+	await _frames(3)
+	await _snap(out + "/board.png")
+	world._close_modal()
+	for c in run.missions.board(st_node).duplicate():
+		run.missions.accept(c)
 	run.waypoint = run.map.nodes[-1]["id"]
 	galaxy.autopilot.engage(run.waypoint)
 	await _frames(90)

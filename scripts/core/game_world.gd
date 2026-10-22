@@ -15,6 +15,7 @@ var hud: HUD
 var modal: Control
 var fade: ColorRect
 var ended := false
+var show_briefing := true        # tests turn this off
 var engine_hum: AudioStreamPlayer
 
 
@@ -32,7 +33,7 @@ func _ready() -> void:
 	add_child(galaxy)
 	galaxy.build(Run.map, player, int(Run.map.nodes[0]["seed"]))
 	player.world = galaxy
-	galaxy.victory.connect(func(): _end_run(true))
+	galaxy.victory.connect(_on_victory)
 	galaxy.region_entered.connect(_on_region_entered)
 
 	camera = ChaseCamera.new()
@@ -69,11 +70,16 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CONFINED_HIDDEN
 	var tw := create_tween()
 	tw.tween_property(fade, "color:a", 0.0, 0.8)
+	if show_briefing:
+		_open_mission_ui.call_deferred(MissionUI.Mode.BRIEFING)
+	Run.message.emit("Objective: " + Run.missions.main_text(), Color(1, 0.85, 0.3))
 	Run.message.emit("Pirates ahead. Steer with the mouse, shoot with left click.", Color(0.7, 0.85, 1))
 	Run.message.emit("Fly through a trade lane ring to travel fast. M opens the nav map.", Color(0.7, 0.85, 1))
 
 
 func _exit_tree() -> void:
+	if engine_hum:
+		engine_hum.stop()
 	if Run.loadout_changed.is_connected(_on_loadout_changed):
 		Run.loadout_changed.disconnect(_on_loadout_changed)
 	get_tree().paused = false
@@ -119,6 +125,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_open_inventory(null)
 	elif event.is_action_pressed("map"):
 		_open_map()
+	elif event.is_action_pressed("journal"):
+		_open_mission_ui(MissionUI.Mode.JOURNAL)
 	elif event.is_action_pressed("pause"):
 		_open_pause()
 
@@ -163,7 +171,22 @@ func _open_inventory(station: Station) -> void:
 	inv.station = station
 	inv.closed.connect(_close_modal)
 	inv.jettison.connect(_on_jettison)
+	if station:
+		inv.board_requested.connect(_open_mission_ui.bind(MissionUI.Mode.BOARD, station))
 	_open_modal(inv)
+
+
+func _open_mission_ui(mode: int, station: Station = null) -> void:
+	var m := MissionUI.new()
+	m.mode = mode
+	m.galaxy = galaxy
+	var r := galaxy.current_region()
+	if r:
+		m.station_node = int(r.node["id"])
+	m.closed.connect(_close_modal)
+	if station:
+		m.back_to_shop.connect(_open_inventory.bind(station))
+	_open_modal(m)
 
 
 func _open_pause() -> void:
@@ -187,6 +210,7 @@ func _on_interact() -> void:
 			player.flight.throttle = 0.0
 			Run.message.emit("Docked at " + st.station_name, Color(0.5, 1, 0.6))
 			Sfx.play(self, "dock", -4.0)
+			Run.missions.on_event("dock", {"node": int(galaxy.current_region().node["id"])})
 			_open_inventory(st)
 		"event":
 			var region := galaxy.current_region()
@@ -204,6 +228,7 @@ func _resolve_event(ev: EventUI, region: Region, choice: int) -> void:
 	var text := SectorEvents.resolve(region.state["event"], choice, self)
 	if not text.begins_with("You can't afford"):
 		region.finish_event()
+		Run.missions.on_event("signal", {"node": int(region.node["id"])})
 	ev.show_result(text)
 
 
@@ -223,6 +248,11 @@ func _on_loadout_changed() -> void:
 
 
 # --- End of run ---------------------------------------------------------------
+
+func _on_victory() -> void:
+	Run.missions.on_event("escape")
+	_end_run(true)
+
 
 func _on_player_died(_s: Ship) -> void:
 	Run.hull = 0.0
