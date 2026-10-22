@@ -137,7 +137,8 @@ func _update_aim() -> void:
 	var dist := 500.0
 	has_lead = false
 	if target and is_instance_valid(target) and target.alive:
-		dist = global_position.distance_to(target.global_position)
+		# Converge the guns at the target, but never further than ~1 km.
+		dist = minf(global_position.distance_to(target.global_position), 1000.0)
 		lead_point = compute_lead(target)
 		has_lead = true
 		var to_lead := (lead_point - origin).normalized()

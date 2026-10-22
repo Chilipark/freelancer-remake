@@ -300,6 +300,24 @@ func _test_playthrough() -> void:
 		await physics_frame
 	check(player.alive, "player survives the opening seconds")
 
+	# Regression: with a distant target selected, the guns must keep firing.
+	var far_target = galaxy._spawn_enemy(player.position + player.forward() * 2000.0, "jammer", 1)
+	far_target.jam_radius = 0.0
+	far_target.remove_from_group("jammers")
+	player.target = far_target
+	var shots := 0
+	for i in 12:
+		player.cooldowns.fill(0.0)
+		player.power = player.stats.max_power
+		player._update_aim()
+		if player.fire(player.aim_point):
+			shots += 1
+	check(shots == 12, "guns keep firing with a far target selected (fired %d/12)" % shots)
+	far_target.remove_from_group("ships")
+	far_target.queue_free()
+	player.target = null
+	await process_frame
+
 	# Destroy the start pirates, collect drops.
 	var credits_before: int = run.credits
 	for e in enemies:

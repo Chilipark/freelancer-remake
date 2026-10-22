@@ -123,8 +123,8 @@ func fire(aim_point: Vector3) -> bool:
 			continue
 		var hp: Vector3 = hardpoints[i % hardpoints.size()] if not hardpoints.is_empty() else Vector3.ZERO
 		var origin := global_transform * hp
-		if global_position.distance_to(aim_point) > float(w["range"]) * 1.5:
-			continue
+		# No range check here: shots simply fade out at max range. (Enemy AI
+		# checks range itself before firing.)
 		var dir := (aim_point - origin).normalized()
 		# Guns only swivel within their gimbal; otherwise they fire straight ahead.
 		if dir.angle_to(forward()) > deg_to_rad(GIMBAL_DEG):
