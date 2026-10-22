@@ -25,8 +25,18 @@ upgrades and new ships.
 
 ## Running
 
-Open the folder in the Godot 4.3+ editor and press **F5**, or run
-`godot --path .`.
+**Without Godot:** download the latest Windows build from the
+[Actions tab](../../actions) (open the newest "Build game" run, then
+*StarlaneRogue-Windows* under Artifacts), unzip it and run
+`StarlaneRogue.exe`. On older graphics cards use
+`Play (compatibility mode).bat`.
+
+**With Godot:** open the folder in the Godot 4.3+ editor and press **F5**,
+or run `godot --path .`.
+
+**Building yourself:** install the Godot 4.3 export templates, then
+`godot --headless --path . --export-release "Windows Desktop" build/windows/StarlaneRogue.exe`
+(or `"Linux"`). Presets are in `export_presets.cfg`.
 
 ## Controls (Freelancer defaults)
 

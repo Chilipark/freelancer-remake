@@ -1,0 +1,48 @@
+name: Build game
+
+# Exports Windows and Linux builds on every push to main. Download them from
+# the run's "Artifacts" section on the Actions tab.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up export templates
+        run: |
+          mkdir -v -p ~/.local/share/godot/export_templates/
+          mv /root/.local/share/godot/export_templates/4.3.stable ~/.local/share/godot/export_templates/4.3.stable || true
+
+      - name: Import assets
+        run: godot --headless --editor --quit --path . || true
+
+      - name: Run tests
+        run: godot --headless --path . --script res://tests/run_tests.gd
+
+      - name: Export Windows
+        run: |
+          mkdir -p build/windows
+          godot --headless --path . --export-release "Windows Desktop" build/windows/StarlaneRogue.exe
+          cp dist/windows/* build/windows/
+
+      - name: Export Linux
+        run: |
+          mkdir -p build/linux
+          godot --headless --path . --export-release "Linux" build/linux/StarlaneRogue.x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarlaneRogue-Windows
+          path: build/windows
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarlaneRogue-Linux
+          path: build/linux

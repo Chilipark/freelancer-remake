@@ -7,6 +7,9 @@ var _screen: Node
 func _ready() -> void:
 	InputSetup.ensure()
 	show_menu()
+	# "-- --autostart" skips the menu (handy for quick testing).
+	if "--autostart" in OS.get_cmdline_user_args():
+		start_run.call_deferred("kestrel")
 
 
 func show_menu() -> void:
